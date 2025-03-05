@@ -312,4 +312,4 @@ CLAUDE.md
 !.envs
 !.env.*.EXAMPLE
 !mcp-server/MCP_README.md
-!.chroma/*
+.chroma/*

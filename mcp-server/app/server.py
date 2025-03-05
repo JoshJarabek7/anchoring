@@ -15,11 +15,9 @@ import os
 load_dotenv()
 
 # Override with localhost to ensure we can connect from outside Docker
-chroma_host = os.getenv("CHROMA_HOST", "localhost")
-chroma_port = os.getenv("CHROMA_PORT", 8000)
 openai_api_key = os.getenv("OPENAI_API_KEY")
-
-chroma_client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
+chroma_path = os.getenv("CHROMA_PATH", default="../.chroma")
+chroma_client = chromadb.PersistentClient(path=chroma_path)
 
 # Create an MCP server
 mcp = FastMCP("Version-Pinned Documentation Snippets", dependencies=["openai", "pydantic", "chromadb", "tiktoken", "numpy", "python-dotenv"])

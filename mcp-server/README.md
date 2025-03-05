@@ -1,12 +1,11 @@
 # Documentation Snippets MCP Server
 
-This project implements a Model Context Protocol (MCP) server that provides version-pinned documentation snippets to Claude and other MCP-compatible LLMs. It uses ChromaDB for vector storage and embedding search.
+This project implements a Model Context Protocol (MCP) server that provides version-pinned documentation snippets to Claude and other MCP-compatible LLMs. It uses ChromaDB in embedded mode for vector storage and embedding search.
 
 ## Prerequisites
 
-- [Docker](https://www.docker.com/get-started/) and Docker Compose
 - Python 3.10+
-- [uv](https://github.com/astral-sh/uv) for Python package management (recommended)
+- [MCP CLI](https://github.com/modelcontextprotocol/python-sdk) (recommended)
 
 ## Setup Instructions
 
@@ -23,70 +22,69 @@ The server requires environment variables for configuration. Follow these steps:
    ```
    PYTHONDONTWRITEBYTECODE=1
    PYTHONUNBUFFERED=1
-   CHROMA_HOST=chromadb
-   CHROMA_PORT=8000
+   CHROMA_PATH=../.chroma
    OPENAI_API_KEY=your_openai_api_key_here
    MCP_SERVER_NAME="Version-Pinned Documentation Snippets"
    ```
 
    Make sure to replace `your_openai_api_key_here` with your actual OpenAI API key.
-
-   **Note about CHROMA_HOST**: If you're running the server and ChromaDB on the same machine but outside Docker, you might need to modify the server code to use "localhost" instead of the Docker service name "chromadb" for connectivity.
+   
+   Note: The `CHROMA_PATH` variable specifies where ChromaDB will store its data. The default is `../.chroma` (relative to the server directory).
 
 ### 2. Set Up Python Environment
 
-We recommend using [uv](https://github.com/astral-sh/uv) for managing your Python environment:
+#### Option A: Using MCP CLI (Recommended)
 
-1. Install uv if you haven't already:
-   ```bash
-   pip install uv
-   ```
+If you use the MCP CLI tools like `mcp dev` or `mcp install`, dependencies are automatically handled by the FastMCP server configuration. Simply install the MCP CLI:
 
-2. Create a virtual environment and install dependencies:
-   ```bash
-   uv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   uv pip install -r requirements.dev.txt
-   ```
+```bash
+pip install mcp
+```
 
-   Alternatively, you can use standard pip:
+#### Option B: Manual Setup
+
+If you prefer to run the server directly with Python, you'll need to set up a virtual environment and install dependencies manually:
+
+1. Create a virtual environment:
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+2. Install dependencies:
+   ```bash
    pip install -r requirements.dev.txt
    ```
 
-### 3. Start ChromaDB
+### 3. Run the MCP Server
 
-The server relies on ChromaDB for vector storage. **You must start ChromaDB before running the MCP server**:
+After setting up the environment, you can run the server:
+
+#### Option A: Using MCP CLI (Recommended)
+
+The MCP CLI automatically handles dependency installation and provides useful developer tools:
 
 ```bash
-docker-compose up -d
+# Run in development mode with inspector interface
+mcp dev app/server.py
+
+# OR install the server in Claude Desktop
+mcp install app/server.py
 ```
 
-This will start the ChromaDB service in detached mode. To verify it's running:
+#### Option B: Direct Python Execution
+
+If you've set up a virtual environment manually:
 
 ```bash
-docker ps
-```
+# Activate your virtual environment first
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-You should see a container named `mcp-server-chromadb-1` (or similar) running.
-
-### 4. Run the MCP Server
-
-After setting up the environment and starting ChromaDB, you can now run the MCP server:
-
-```bash
+# Then run the server
 python -m app.server
 ```
 
-Or using the MCP CLI:
-
-```bash
-mcp dev app.server.py
-```
-
-### 5. Install in Claude Desktop
+### 4. Install in Claude Desktop
 
 To use the server with Claude Desktop:
 
@@ -105,69 +103,44 @@ To use the server with Claude Desktop:
 
 If you see "Server disconnected" errors in Claude Desktop:
 
-1. Verify ChromaDB is running: `docker ps`
-2. Check your environment variables in `.env`
-3. Make sure your OpenAI API key is valid
-4. Ensure the port (default: 8000) is not being used by another application
+1. Verify your environment variables in `.env`
+2. Make sure your OpenAI API key is valid
+3. Ensure the path specified in CHROMA_PATH exists and is writable
 
 ### ChromaDB Connection Issues
 
-If the server can't connect to ChromaDB:
+The server uses ChromaDB in embedded mode (PersistentClient), so there's no separate server to connect to. If you're having issues:
 
-1. Ensure the ChromaDB container is running
-2. Check if you're running the server on the same host as ChromaDB
-3. If running ChromaDB in a different environment, update the `CHROMA_HOST` in your `.env` file
-
-### Common Errors and Solutions
-
-#### "nodename nor servname provided, or not known"
-
-This error indicates a DNS resolution issue when connecting to ChromaDB:
-
-```
-httpx.ConnectError: [Errno 8] nodename nor servname provided, or not known
-ValueError: Could not connect to a Chroma server. Are you sure it is running?
-```
-
-**Solution**: 
-1. Edit `app/server.py` and change:
+1. Check that the directory specified in `CHROMA_PATH` exists and is writable
+2. Try temporarily using in-memory mode by modifying server.py:
    ```python
-   chroma_host = os.getenv("CHROMA_HOST", "localhost")
+   # Change from:
+   chroma_client = chromadb.PersistentClient(path=chroma_path)
+   # To:
+   chroma_client = chromadb.Client()
    ```
-   to:
-   ```python
-   chroma_host = "localhost"
-   ```
-2. Ensure the ChromaDB Docker container is running
-
-#### EmbeddingFunction Signature Error
-
-If you see this error:
-
-```
-ValueError: Expected EmbeddingFunction.__call__ to have the following signature: odict_keys(['self', 'input']), got odict_keys(['self', 'args', 'kwargs'])
-```
-
-**Solution**:
-1. Make sure you're instantiating the embedding function class when creating a collection:
-   ```python
-   # Correct:
-   embedding_function=MyEmbeddingFunction()
-   
-   # Incorrect:
-   embedding_function=MyEmbeddingFunction
-   ```
-2. Ensure your embedding function class follows the expected signature pattern
+3. Ensure you don't have conflicting ChromaDB versions
 
 ## Development
 
 For development, you can run the server in debug mode:
 
 ```bash
-mcp dev app.server.py
+mcp dev app/server.py
 ```
 
 This will provide more detailed logs and allow you to interact with the server through the MCP Inspector interface.
+
+### About Dependencies
+
+The server is configured with automatic dependency handling through the FastMCP constructor:
+
+```python
+mcp = FastMCP("Version-Pinned Documentation Snippets", 
+              dependencies=["openai", "pydantic", "chromadb", "tiktoken", "numpy", "python-dotenv"])
+```
+
+This means the MCP CLI automatically installs these dependencies when using `mcp dev` or `mcp install`, eliminating the need for manual dependency management when using the MCP CLI tools.
 
 ## License
 
