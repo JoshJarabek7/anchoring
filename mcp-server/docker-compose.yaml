@@ -1,0 +1,14 @@
+services:
+
+  chromadb:
+    image: chromadb/chroma
+    volumes:
+      - ../.chroma:/chroma/chroma
+    ports:
+      - "8000:8000"
+    environment:
+      - ALLOW_RESET=true
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+    restart: unless-stopped
+    

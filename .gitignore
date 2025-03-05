@@ -308,3 +308,8 @@ sketch
 
 CLAUDE.md
 .cursorrules
+.env*
+!.envs
+!.env.*.EXAMPLE
+!mcp-server/MCP_README.md
+!.chroma/*
