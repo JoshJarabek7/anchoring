@@ -306,7 +306,7 @@ sketch
 .ionide
 
 
-CLAUDE.md
+**/CLAUDE.md
 .cursorrules
 .env*
 !.envs

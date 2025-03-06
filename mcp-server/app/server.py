@@ -319,6 +319,8 @@ class Documentation(BaseModel):
     snippet_id: str
     source_url: str
     title: str
+    description: str  # Added description field
+    content: str
     concepts: list[str] = []
 
 class TechComponent(BaseModel):
@@ -375,9 +377,11 @@ def format_documentation_results(results):
                 tech_info.append(f"Framework: {metadata.get('framework')} {metadata.get('framework_version', '')}")
         
         title = metadata.get('title', 'Documentation Snippet')
+        description = metadata.get('description', 'No description available')
         source_url = metadata.get('source_url', '')
         
         formatted_results += f"## {i+1}. {title}\n\n"
+        formatted_results += f"*{description}*\n\n"
         formatted_results += f"**Tech Stack**: {' | '.join(tech_info)}\n\n"
         
         if source_url:

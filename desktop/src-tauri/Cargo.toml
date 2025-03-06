@@ -23,4 +23,8 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-http = { version = "2", features = ["dangerous-settings"] }
+tauri-plugin-fs = "2"
+reqwest = { version = "0.12.12", features = ["json"] }
+tauri-plugin-cors-fetch = "3.1.0"
 

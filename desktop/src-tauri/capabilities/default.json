@@ -13,9 +13,26 @@
     "sql:allow-close",
     "sql:allow-load",
     "sql:allow-select",
-    "sql:deny-close",
-    "sql:deny-execute",
-    "sql:deny-load",
-    "sql:deny-select"
+    "http:default",
+    "fs:default",
+    "fs:write-all",
+    "fs:read-all",
+    "http:allow-fetch",
+    "http:allow-fetch-send",
+    "http:allow-fetch-read-body",
+    "http:allow-fetch-cancel",
+    "cors-fetch:default",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "/Users/woof/GauntletAI/anchoring/.chroma" },
+        { "path": "/Users/woof/GauntletAI/anchoring/.chroma/**" }
+      ]
+    },
+    {
+      "identifier": "http:default",
+      "allow": [{"url": "http://*:*"}, {"url": "https://*:*"}, {"url": "http://*"}, {"url": "https://*"}]
+    }
   ]
 }
