@@ -635,7 +635,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
                 <span>Selected: {selectedUrls.length}</span>
               </div>
               
-              <ScrollArea className="h-[200px] border rounded-md">
+              <ScrollArea className="h-[600px] border rounded-md">
                 {renderURLList()}
               </ScrollArea>
               
@@ -833,7 +833,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
               <span>Already Processed: {processedUrls.length}</span>
             </div>
             
-            <ScrollArea className="h-[200px] border rounded-md">
+            <ScrollArea className="h-[600px] border rounded-md">
               {renderURLList()}
             </ScrollArea>
           </div>
