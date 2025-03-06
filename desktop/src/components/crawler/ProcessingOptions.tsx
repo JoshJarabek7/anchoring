@@ -49,7 +49,7 @@ export default function ProcessingOptions({
     defaultValues: {
       model: "gpt-4o-mini",
       temperature: 0.2,
-      maxTokens: 8192,
+      maxTokens: 120000,
     },
   });
 
@@ -74,21 +74,9 @@ export default function ProcessingOptions({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Model</FormLabel>
-                  <Select
-                    disabled={disabled}
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select model" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="gpt-4o-mini">GPT-4o-mini (Default)</SelectItem>
-                      <SelectItem value="gpt-4o">GPT-4o (Higher quality, slower)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="p-2 border rounded-md bg-muted/20">
+                    <div className="text-sm">GPT-4o-mini (Default)</div>
+                  </div>
                   <FormDescription>
                     Model used for cleaning up and processing markdown
                   </FormDescription>
@@ -125,33 +113,13 @@ export default function ProcessingOptions({
               )}
             />
             
-            <FormField
-              control={form.control}
-              name="maxTokens"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-base">
-                      Use maximum token limit
-                    </FormLabel>
-                    <FormDescription>
-                      Allow using the maximum token context for larger documents
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      disabled={disabled}
-                      checked={field.value === 32000}
-                      onCheckedChange={(checked) =>
-                        field.onChange(checked ? 32000 : 8192)
-                      }
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+            <div className="rounded-lg border p-4 bg-muted/20 mb-6">
+              <div className="text-sm text-muted-foreground">
+                Using maximum token context (120,000 tokens) for large document processing
+              </div>
+            </div>
           </CardContent>
-          <CardFooter className="flex justify-between">
+          <CardFooter className="flex justify-between pt-2">
             <Button
               type="button"
               variant="outline"

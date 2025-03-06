@@ -54,9 +54,9 @@ export type UrlFormValues = z.infer<typeof urlFormSchema>;
  * Markdown cleanup form schema
  */
 export const markdownCleanupFormSchema = z.object({
-  model: z.enum(["gpt-4o-mini", "gpt-4o"]).default("gpt-4o-mini"),
+  model: z.enum(["gpt-4o-mini"]).default("gpt-4o-mini"),
   temperature: z.number().min(0).max(1).default(0.2),
-  maxTokens: z.number().min(1).max(32000).default(8192),
+  maxTokens: z.number().min(1).max(120000).default(120000),
 });
 
 export type MarkdownCleanupValues = z.infer<typeof markdownCleanupFormSchema>;

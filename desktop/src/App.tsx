@@ -130,6 +130,7 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
         // Import and use getCrawlSettings
         const { getCrawlSettings } = await import("./lib/db");
         const settings = await getCrawlSettings(sessionId);
+        console.log("Loaded crawler settings:", settings);
         setSettings(settings);
       } catch (error) {
         console.error("Failed to load crawler settings:", error);
@@ -252,8 +253,9 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
   }
   
   const handleSettingsSaved = (newSettings: CrawlSettings) => {
+    console.log("Settings saved:", newSettings);
     setSettings(newSettings);
-    toast.success("Crawler settings saved successfully!");
+    toast.success("Crawler settings saved successfully");
   };
   
   if (loading) {

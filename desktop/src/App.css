@@ -140,5 +140,18 @@
   }
   body {
     @apply bg-background text-foreground;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .no-scrollbar {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+  
+  .no-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
   }
 }

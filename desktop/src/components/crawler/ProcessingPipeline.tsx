@@ -112,7 +112,8 @@ export default function ProcessingPipeline({
       .filter(url => url.html)
       .map(url => ({
         url: url.url,
-        html: url.html!
+        html: url.html!,
+        id: url.id
       }));
 
     console.log(`Found ${sourcesToProcess.length} URLs with HTML content to process`);

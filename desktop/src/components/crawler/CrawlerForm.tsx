@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -33,6 +33,23 @@ export default function CrawlerForm({
   const [prefixPath, setPrefixPath] = useState(existingSettings?.prefix_path || "");
   const [antiPaths, setAntiPaths] = useState(existingSettings?.anti_paths || "");
   const [antiKeywords, setAntiKeywords] = useState(existingSettings?.anti_keywords || "");
+  
+  // Update local state when existingSettings changes
+  useEffect(() => {
+    console.log("Updating CrawlerForm with settings:", existingSettings);
+    if (existingSettings) {
+      setPrefixPath(existingSettings.prefix_path || "");
+      setAntiPaths(existingSettings.anti_paths || "");
+      setAntiKeywords(existingSettings.anti_keywords || "");
+      
+      // Also update the form state
+      form.reset({
+        prefix_path: existingSettings.prefix_path || "",
+        anti_paths: existingSettings.anti_paths || "",
+        anti_keywords: existingSettings.anti_keywords || "",
+      });
+    }
+  }, [existingSettings]);
   
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
