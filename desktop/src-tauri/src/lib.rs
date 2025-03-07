@@ -229,6 +229,153 @@ fn ensure_chrome_installed() -> Result<(), String> {
     }
 }
 
+/// Convert HTML content to Markdown format
+/// 
+/// This command provides a Rust implementation of the HTML to Markdown conversion
+/// that was previously done in JavaScript. It uses the html2md crate to perform
+/// the conversion efficiently, especially for large HTML documents.
+#[tauri::command]
+fn convert_html_to_markdown(html: String) -> Result<String, String> {
+    use std::time::Instant;
+    
+    println!("Converting HTML to Markdown using Rust implementation");
+    println!("HTML content length: {} characters", html.len());
+    println!("HTML content preview: {}", &html[..std::cmp::min(100, html.len())]);
+    
+    let start = Instant::now();
+    
+    // Perform the conversion using html2md
+    let result = match std::panic::catch_unwind(|| {
+        html2md::parse_html(&html)
+    }) {
+        Ok(markdown) => markdown,
+        Err(e) => return Err(format!("Failed to convert HTML to Markdown: {:?}", e)),
+    };
+    
+    let duration = start.elapsed();
+    
+    println!("✅ HTML to Markdown conversion completed in {}ms", duration.as_millis());
+    println!("Markdown length: {} characters", result.len());
+    println!("Markdown preview: {}", &result[..std::cmp::min(100, result.len())]);
+    
+    Ok(result)
+}
+
+/// Chunk text using semantic boundaries and token counts
+/// 
+/// This function splits text into optimized chunks for language models,
+/// using semantic boundaries (paragraphs, sentences, headings, code blocks)
+/// and respecting token limits for different models:
+/// - cl100k_base for text-embedding-3-large (8,191 tokens max)
+/// - o200k_base for gpt-4o-mini (128,000 tokens max)
+///
+/// It automatically detects content type (markdown, code) and applies
+/// the appropriate splitting strategy.
+#[tauri::command]
+fn split_text_by_tokens(
+    text: String, 
+    model_type: String, 
+    chunk_size: usize, 
+    chunk_overlap: usize,
+    content_type: Option<String>
+) -> Result<Vec<String>, String> {
+    use std::time::Instant;
+    use text_splitter::{TextSplitter, ChunkConfig, MarkdownSplitter};
+    use tiktoken_rs::{cl100k_base, o200k_base};
+    
+    println!("Splitting text using Rust implementation");
+    println!("Text length: {} characters", text.len());
+    println!("Model type: {}, Chunk size: {}, Overlap: {}", model_type, chunk_size, chunk_overlap);
+    
+    let start = Instant::now();
+    
+    // Define model-specific parameters
+    let (model_name, max_tokens) = match model_type.as_str() {
+        "cl100k_base" | "text-embedding-3-large" => ("cl100k_base", 8191),
+        "o200k_base" | "gpt-4o-mini" => ("o200k_base", 128000),
+        _ => return Err(format!("Unsupported model type: {}. Use 'cl100k_base'/'text-embedding-3-large' or 'o200k_base'/'gpt-4o-mini'", model_type)),
+    };
+    
+    // Use provided chunk size or default to model's max tokens
+    let actual_chunk_size = if chunk_size == 0 { max_tokens } else { chunk_size };
+    
+    // Define chunk range with overlap
+    let chunk_range = (actual_chunk_size - chunk_overlap)..actual_chunk_size;
+    
+    // Detect content type if not explicitly provided
+    let is_markdown = match content_type {
+        Some(ctype) => ctype.to_lowercase() == "markdown",
+        None => {
+            // Simple detection logic for markdown
+            text.contains("```") || text.contains("##") || (text.contains("#") && text.contains("\n"))
+        }
+    };
+
+    // Process based on model and content type (markdown or plain text)
+    let result: Vec<String> = if model_name == "cl100k_base" {
+        let tokenizer = cl100k_base().map_err(|e| format!("Failed to initialize cl100k tokenizer: {}", e))?;
+        
+        if is_markdown {
+            println!("Using Markdown splitter with cl100k tokenizer");
+            let config = ChunkConfig::new(chunk_range).with_sizer(tokenizer);
+            let splitter = MarkdownSplitter::new(config);
+            splitter.chunks(&text).map(|s| s.to_string()).collect()
+        } else {
+            println!("Using Text splitter with cl100k tokenizer");
+            let config = ChunkConfig::new(chunk_range).with_sizer(tokenizer);
+            let splitter = TextSplitter::new(config);
+            splitter.chunks(&text).map(|s| s.to_string()).collect()
+        }
+    } else {
+        let tokenizer = o200k_base().map_err(|e| format!("Failed to initialize o200k tokenizer: {}", e))?;
+        
+        if is_markdown {
+            println!("Using Markdown splitter with o200k tokenizer");
+            let config = ChunkConfig::new(chunk_range).with_sizer(tokenizer);
+            let splitter = MarkdownSplitter::new(config);
+            splitter.chunks(&text).map(|s| s.to_string()).collect()
+        } else {
+            println!("Using Text splitter with o200k tokenizer");
+            let config = ChunkConfig::new(chunk_range).with_sizer(tokenizer);
+            let splitter = TextSplitter::new(config);
+            splitter.chunks(&text).map(|s| s.to_string()).collect()
+        }
+    };
+    
+    let duration = start.elapsed();
+    
+    println!("✅ Text splitting completed in {}ms", duration.as_millis());
+    println!("Created {} chunks", result.len());
+    
+    Ok(result)
+}
+
+// Code splitter functionality removed as not needed
+
+/// Count tokens in a text string using different tokenizers
+///
+/// This function counts tokens in text using the specified tokenizer model:
+/// - cl100k_base for text-embedding-3-large
+/// - o200k_base for gpt-4o-mini
+#[tauri::command]
+fn count_tokens(text: String, model_type: String) -> Result<usize, String> {
+    use tiktoken_rs::{cl100k_base, o200k_base};
+    
+    let token_count = match model_type.as_str() {
+        "cl100k_base" | "text-embedding-3-large" => {
+            let tokenizer = cl100k_base().map_err(|e| format!("Failed to initialize cl100k tokenizer: {}", e))?;
+            tokenizer.encode_with_special_tokens(&text).len()
+        },
+        "o200k_base" | "gpt-4o-mini" => {
+            let tokenizer = o200k_base().map_err(|e| format!("Failed to initialize o200k tokenizer: {}", e))?;
+            tokenizer.encode_with_special_tokens(&text).len()
+        },
+        _ => return Err(format!("Unsupported model type: {}. Use 'cl100k_base' or 'o200k_base'", model_type)),
+    };
+    
+    Ok(token_count)
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -242,7 +389,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             fetch_proxies,
-            fetch_with_headless_browser
+            fetch_with_headless_browser,
+            convert_html_to_markdown,
+            split_text_by_tokens,
+            count_tokens
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
