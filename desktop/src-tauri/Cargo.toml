@@ -27,4 +27,9 @@ tauri-plugin-http = { version = "2", features = ["dangerous-settings"] }
 tauri-plugin-fs = "2"
 reqwest = { version = "0.12.12", features = ["json"] }
 tauri-plugin-cors-fetch = "3.1.0"
+headless_chrome = "1.0.2"
+chromedriver-update = "1.0.2"
+tokio = {version = "1.43.0", features = ["full"] }
+tiktoken-rs = "0.6.0"
+
 

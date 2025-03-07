@@ -6,3 +6,4 @@ venv
 chroma.log
 __pycache__
 .DS_STORE
+python-sdk.md
