@@ -10,7 +10,7 @@ interface UrlSnippetCount {
 /**
  * Hook to manage processed URLs for a session
  */
-export function useProcessedUrls(sessionId: number, chromaPath?: string, apiKey?: string) {
+export function useProcessedUrls(sessionId: number, apiKey?: string) {
   const [processedUrls, setProcessedUrls] = useState<string[]>([]);
   const [urlSnippetCounts, setUrlSnippetCounts] = useState<UrlSnippetCount[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,9 +39,9 @@ export function useProcessedUrls(sessionId: number, chromaPath?: string, apiKey?
       const initialCounts = processed.map(url => ({ url, count: null }));
       setUrlSnippetCounts(initialCounts);
       
-      // If we have ChromaDB path and API key, load snippet counts
-      if (chromaPath && apiKey && processed.length > 0) {
-        loadSnippetCounts(processed, chromaPath, apiKey);
+      // If we have API key, load snippet counts
+      if (apiKey && processed.length > 0) {
+        loadSnippetCounts(processed, apiKey);
       }
     } catch (err) {
       console.error('Error loading processed URLs:', err);
@@ -51,37 +51,62 @@ export function useProcessedUrls(sessionId: number, chromaPath?: string, apiKey?
     }
   };
   
-  // Load snippet counts for URLs
-  const loadSnippetCounts = async (urls: string[], chromaPath: string, apiKey: string) => {
+  // Load snippet counts for URLs (optimized to avoid loading content)
+  const loadSnippetCounts = async (urls: string[], apiKey: string) => {
     if (!urls.length) return;
     
     try {
       setCountLoading(true);
       
       // Create ChromaDB client
-      const chromaClient = new ChromaClient(chromaPath, apiKey);
+      const chromaClient = new ChromaClient(apiKey);
       await chromaClient.initialize();
       
-      // Get counts for each URL
-      const counts: UrlSnippetCount[] = [];
+      // Get counts for each URL - process in batches to avoid memory issues
+      const BATCH_SIZE = 5;
+      let counts: UrlSnippetCount[] = [];
       
-      for (const url of urls) {
-        try {
-          const snippets = await chromaClient.getSnippetsForUrl(url);
-          counts.push({
-            url,
-            count: snippets.length
-          });
-        } catch (err) {
-          console.error(`Error getting snippet count for ${url}:`, err);
-          counts.push({
-            url,
-            count: null
-          });
+      for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+        const batchUrls = urls.slice(i, i + BATCH_SIZE);
+        const batchCounts: UrlSnippetCount[] = [];
+        
+        for (const url of batchUrls) {
+          try {
+            // Use the new optimized method that only gets count without loading content
+            const count = await chromaClient.getSnippetCountForUrl(url);
+            batchCounts.push({
+              url,
+              count: count
+            });
+          } catch (err) {
+            console.error(`Error getting snippet count for ${url}:`, err);
+            batchCounts.push({
+              url,
+              count: null
+            });
+          }
         }
+        
+        // Update state with each batch to show progress
+        counts = [...counts, ...batchCounts];
+        setUrlSnippetCounts(prev => {
+          const updatedCounts = [...prev];
+          // Update counts for batch URLs
+          for (const item of batchCounts) {
+            const existingIndex = updatedCounts.findIndex(u => u.url === item.url);
+            if (existingIndex >= 0) {
+              updatedCounts[existingIndex] = item;
+            } else {
+              updatedCounts.push(item);
+            }
+          }
+          return updatedCounts;
+        });
       }
       
-      setUrlSnippetCounts(counts);
+      // Clean up resources
+      (chromaClient as any).client = null;
+      (chromaClient as any).collection = null;
     } catch (err) {
       console.error('Error loading snippet counts:', err);
     } finally {
@@ -125,8 +150,8 @@ export function useProcessedUrls(sessionId: number, chromaPath?: string, apiKey?
       });
       
       // Update the snippet counts
-      if (chromaPath && apiKey) {
-        loadSnippetCounts(urls, chromaPath, apiKey);
+      if (apiKey) {
+        loadSnippetCounts(urls, apiKey);
       }
     } catch (err) {
       console.error('Error marking URLs as processed:', err);

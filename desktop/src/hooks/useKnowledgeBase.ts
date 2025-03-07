@@ -22,7 +22,7 @@ interface ComponentOptions {
 /**
  * Hook to manage knowledge base search, filtering and available components
  */
-export function useKnowledgeBase(chromaPath: string, apiKey: string) {
+export function useKnowledgeBase(apiKey: string) {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<FullDocumentationSnippet[]>([]);
   const [filters, setFilters] = useState<KnowledgeBaseFilters>({
@@ -38,14 +38,14 @@ export function useKnowledgeBase(chromaPath: string, apiKey: string) {
   
   // Initialize ChromaClient
   const getClient = async () => {
-    const client = new ChromaClient(chromaPath, apiKey);
+    const client = new ChromaClient(apiKey);
     await client.initialize();
     return client;
   };
   
   // Load available components for filters
   const loadAvailableComponents = async () => {
-    if (!chromaPath || !apiKey) return;
+    if (!apiKey) return;
     
     try {
       setLoading(true);
@@ -55,6 +55,10 @@ export function useKnowledgeBase(chromaPath: string, apiKey: string) {
       const languages = await client.getAvailableComponents(DocumentationCategory.LANGUAGE);
       const frameworks = await client.getAvailableComponents(DocumentationCategory.FRAMEWORK);
       const libraries = await client.getAvailableComponents(DocumentationCategory.LIBRARY);
+      
+      // Release client to free memory
+      (client as any).client = null;
+      (client as any).collection = null;
       
       setAvailableComponents({
         languages,
@@ -76,12 +80,14 @@ export function useKnowledgeBase(chromaPath: string, apiKey: string) {
       return;
     }
     
-    if (!chromaPath || !apiKey) {
-      setError('ChromaDB path or API key not set');
+    if (!apiKey) {
+      setError('API key not set');
       return;
     }
     
     try {
+      // Clear previous results to free memory
+      setSearchResults([]);
       setLoading(true);
       setError(null);
       setSearchQuery(query);
@@ -105,9 +111,13 @@ export function useKnowledgeBase(chromaPath: string, apiKey: string) {
       if (filtersToUse.library) searchFiltersObj.library = filtersToUse.library;
       if (filtersToUse.library_version) searchFiltersObj.library_version = filtersToUse.library_version;
       
-      // Search with the query and filters
-      const results = await client.searchDocuments(query, searchFiltersObj, 20);
+      // Search with the query and filters - limit to 10 results for memory savings
+      const results = await client.searchDocuments(query, searchFiltersObj, 10);
       setSearchResults(results);
+      
+      // Release client resources
+      (client as any).client = null;
+      (client as any).collection = null;
     } catch (err) {
       console.error('Error searching snippets:', err);
       setError('Failed to search documentation snippets');
@@ -133,10 +143,10 @@ export function useKnowledgeBase(chromaPath: string, apiKey: string) {
   
   // Load components on initial render
   useEffect(() => {
-    if (chromaPath && apiKey) {
+    if (apiKey) {
       loadAvailableComponents();
     }
-  }, [chromaPath, apiKey]);
+  }, [apiKey]);
   
   return {
     searchQuery,

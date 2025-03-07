@@ -188,7 +188,6 @@ export default function SessionList({ onCreateSession, onSelectSession }: Sessio
                 <TableRow>
                   <TableHead>Title</TableHead>
                   <TableHead>Version</TableHead>
-                  <TableHead>ChromaDB Path</TableHead>
                   <TableHead>Created At</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -198,7 +197,6 @@ export default function SessionList({ onCreateSession, onSelectSession }: Sessio
                   <TableRow key={session.id}>
                     <TableCell>{session.title}</TableCell>
                     <TableCell>{session.version || "N/A"}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{session.chroma_path}</TableCell>
                     <TableCell>{new Date(session.created_at!).toLocaleString()}</TableCell>
                     <TableCell>
                       <div className="flex space-x-2">

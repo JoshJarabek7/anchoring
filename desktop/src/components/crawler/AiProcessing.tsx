@@ -21,11 +21,9 @@ import { Badge } from "../ui/badge";
 import { useProcessedUrls } from "../../hooks/useProcessedUrls";
 import { useSnippets } from "../../hooks/useSnippets";
 import SnippetViewer from "./SnippetViewer";
-import KnowledgeBase from './KnowledgeBase';
 
 interface AiProcessingProps {
   sessionId: number;
-  chromaPath: string;
   apiKey: string;
 }
 
@@ -59,7 +57,7 @@ const PreviewSnippets = ({
   );
 };
 
-export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProcessingProps) {
+export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
   const [urls, setUrls] = useState<CrawlURL[]>([]);
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,7 +83,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
     error: processedError,
     loadProcessedUrls,
     markUrlsAsProcessed
-  } = useProcessedUrls(sessionId, chromaPath, apiKey);
+  } = useProcessedUrls(sessionId, apiKey);
   
   // Add the snippets hook for viewing snippets
   const {
@@ -95,7 +93,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
     selectedUrl,
     fetchSnippets,
     clearSnippets
-  } = useSnippets(chromaPath, apiKey);
+  } = useSnippets(apiKey);
   
   // No cleanup needed - toasts auto-dismiss
   
@@ -247,45 +245,16 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
   };
   
   // Toggle includeProcessed setting
-  const handleToggleIncludeProcessed = async () => {
-    // Toggle the setting
+  const handleToggleIncludeProcessed = () => {
+    // Toggle the setting - the useEffect hook will handle the data fetching
     setIncludeProcessed(prev => !prev);
     
     // Clear selections when the filter changes
     setSelectedUrls([]);
     setSelectAll(false);
     
-    // Set loading state
-    setLoading(true);
-    
-    // Force reload of URLs with the new setting
-    try {
-      const data = await getURLs(sessionId);
-      
-      // Apply the updated filtering logic with the new includeProcessed value
-      const newIncludeProcessed = !includeProcessed; // Toggle value is opposite of current
-      
-      let availableUrls = data.filter(url => {
-        // First make sure we have HTML content
-        if (!url.html) return false;
-        
-        // If includeProcessed is true, show both crawled AND processed URLs
-        if (newIncludeProcessed) {
-          return url.status === "crawled" || url.status === "processed";
-        }
-        
-        // Otherwise, only show crawled URLs that have not been processed
-        return url.status === "crawled" && !processedUrls.includes(url.url);
-      });
-      
-      setUrls(availableUrls);
-      setFilteredUrls(availableUrls);
-    } catch (error) {
-      console.error("Failed to load URLs after toggle:", error);
-      toast.error("Failed to update URL list");
-    } finally {
-      setLoading(false);
-    }
+    // No need to manually reload URLs here - it happens in the useEffect
+    // that depends on includeProcessed
   };
   
   const handleSelectURL = (url: string, checked: boolean) => {
@@ -298,17 +267,21 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
   
   const handleStartProcessing = () => {
     if (!apiKey) {
-      toast.error("Please add your OpenAI API key in Settings");
+      toast.error("Please add your OpenAI API key in Settings", {
+        id: "api-key-missing", // Use unique ID to prevent duplicates
+      });
       return;
     }
     
+    // This check should not be needed since the button is disabled in this case,
+    // but we'll keep it as a safeguard without showing duplicated toasts
     if (selectedUrls.length === 0) {
-      toast.error("Please select at least one URL to process");
-      return;
-    }
-    
-    if (!chromaPath) {
-      toast.error("ChromaDB path not set");
+      // Only show toast if URLs exist but none are selected
+      if (filteredUrls.length > 0) {
+        toast.error("Please select at least one URL to process", {
+          id: "no-urls-selected", // Use unique ID to prevent duplicates
+        });
+      }
       return;
     }
     
@@ -326,7 +299,10 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
     
     // Only show toast for small batches to reduce notification overload
     if (newProcessedUrls.length <= 3) {
-      toast.success(`Processed ${newProcessedUrls.length} URLs successfully`, { duration: 2000 });
+      toast.success(`Processed ${newProcessedUrls.length} URLs successfully`, { 
+        duration: 2000,
+        id: "processing-success" // Use unique ID to prevent duplicates
+      });
     }
     
     // Instead of reloading all URLs, just update our state to avoid a full refresh
@@ -434,7 +410,6 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
       <ProcessingPipeline
         urls={selectedUrlsWithContent}
         apiKey={apiKey}
-        chromaPath={chromaPath}
         sessionId={sessionId}
         category={category}
         language={language}
@@ -567,7 +542,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
           
           {/* Tabbed Interface for URLs */}
           <Tabs defaultValue="to-process" className="w-full">
-            <TabsList className="grid grid-cols-3 mb-4">
+            <TabsList className="grid grid-cols-2 mb-4">
               <TabsTrigger value="to-process">URLs to Process</TabsTrigger>
               <TabsTrigger value="processed" className="relative">
                 Processed URLs
@@ -577,7 +552,6 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="knowledge-base">Knowledge Base</TabsTrigger>
             </TabsList>
             
             <TabsContent value="to-process" className="space-y-4">
@@ -672,13 +646,6 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
                   )}
                 </>
               )}
-            </TabsContent>
-            
-            <TabsContent value="knowledge-base" className="space-y-4">
-              <KnowledgeBase 
-                chromaPath={chromaPath}
-                apiKey={apiKey}
-              />
             </TabsContent>
           </Tabs>
         </CardContent>

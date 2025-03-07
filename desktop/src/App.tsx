@@ -39,9 +39,8 @@ const SetupScreen = ({ onSetup }: { onSetup: (path: string) => void }) => {
       
       if (pathExists) {
         setInitializingDb(true);
-        // Initialize our database (this will be done on the React side)
-        const { initDB } = await import("./lib/db");
-        await initDB();
+        // DB is now initialized by parent component to avoid duplication
+        // We just need to continue with setup
         setInitializingDb(false);
         onSetup(chromaPath);
       }
@@ -53,10 +52,15 @@ const SetupScreen = ({ onSetup }: { onSetup: (path: string) => void }) => {
       if (String(error).includes("forbidden path")) {
         toast.error(
           "Path access denied. This path is not allowed by Tauri security settings. Please choose a different location or contact support.",
-          { duration: 5000 }
+          { 
+            id: "path-forbidden",
+            duration: 5000
+          }
         );
       } else {
-        toast.error("Failed to validate path. Make sure Tauri is running properly.");
+        toast.error("Failed to validate path. Make sure Tauri is running properly.", {
+          id: "path-validation-error"
+        });
       }
     } finally {
       setValidating(false);
@@ -357,13 +361,35 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
   const [activeSession, setActiveSession] = useState<CrawlSession | null>(null);
   const [apiKey, setApiKey] = useState("");
   
+  // Persistent states for tabs
+  const [urlsLoaded, setUrlsLoaded] = useState(false); // Track if URLs were already loaded
+  const [processedLoaded, setProcessedLoaded] = useState(false); // Track if processed URLs were loaded
+  
   // Function to change active tab
   const handleTabChange = (value: string) => {
-    // No need to manually dismiss toasts anymore - they auto-dismiss
+    // Remember previous tab
+    const prevTab = activeTab;
+    
+    // Update active tab
     setActiveTab(value);
+    
+    // Track what data has been loaded for smoother transitions
+    if (value === "processing") {
+      // Mark URLs as needing reload only if we haven't loaded them yet or coming from sessions tab
+      // This prevents duplicate loading when switching between tabs
+      if (!urlsLoaded || prevTab === "sessions") {
+        setUrlsLoaded(true);
+      }
+    }
   };
   
   const handleSelectSession = (session: CrawlSession) => {
+    // When selecting a new session, we need to reset our loaded states
+    if (activeSession?.id !== session.id) {
+      setUrlsLoaded(false);
+      setProcessedLoaded(false);
+    }
+    
     setActiveSession(session);
     setActiveTab("crawler");
   };
@@ -389,7 +415,7 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
       <header className="flex justify-between items-center">
         <h1 className="text-2xl font-bold tracking-tight">Anchoring</h1>
         <div className="text-sm text-muted-foreground">
-          Session: {activeSession ? `${activeSession.title}${activeSession.version ? ` V${activeSession.version}` : ""}` : "None"} | ChromaDB: {chromaPath ? chromaPath.split("/").pop() : "Not Set"}
+          {activeSession ? `Session: ${activeSession.title}${activeSession.version ? ` V${activeSession.version}` : ""}` : "No active session"}
         </div>
       </header>
       
@@ -409,7 +435,6 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
         
         <TabsContent value="sessions">
           <SessionsPage 
-            chromaPath={chromaPath} 
             onSelectSession={handleSelectSession}
           />
         </TabsContent>
@@ -421,7 +446,6 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
         <TabsContent value="processing">
           <AiProcessing 
             sessionId={activeSession?.id || 0} 
-            chromaPath={chromaPath}
             apiKey={apiKey}
           />
         </TabsContent>
@@ -466,7 +490,7 @@ function App() {
             console.log("Found valid ChromaDB path in settings:", settings.chroma_path);
             setChromaPath(settings.chroma_path);
             setIsSetup(true);
-            toast.success("Loaded existing ChromaDB path from settings");
+            // Avoid unnecessary toast that clutters the UI
           } else {
             console.log("ChromaDB path exists in settings but directory not found:", settings.chroma_path);
           }

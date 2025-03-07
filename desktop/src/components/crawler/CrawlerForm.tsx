@@ -166,55 +166,70 @@ export default function CrawlerForm({
             </p>
           </div>
           
-          <div className="border-t pt-4 space-y-4">
-            <h3 className="font-medium">Parallelism Settings</h3>
+          <div className="border-t pt-6 space-y-5">
+            <h3 className="font-medium text-base">Parallelism Settings</h3>
             
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="unlimited-parallelism"
-                checked={unlimitedParallelism}
-                onCheckedChange={(checked) => {
-                  setUnlimitedParallelism(checked === true);
-                  form.setValue("unlimited_parallelism", checked === true);
-                }}
-              />
-              <label
-                htmlFor="unlimited-parallelism"
-                className="text-sm font-medium leading-none cursor-pointer"
-              >
-                Unlimited parallelism (Crawl all URLs simultaneously)
-              </label>
-            </div>
-            
-            {!unlimitedParallelism && (
-              <div className="space-y-2">
-                <Label htmlFor="max_concurrent_requests">
-                  Parallel Crawling: {maxConcurrentRequests} URLs
-                </Label>
-                <Input
-                  id="max_concurrent_requests"
-                  type="number"
-                  min={1}
-                  max={16}
-                  value={maxConcurrentRequests}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value) || 4;
-                    setMaxConcurrentRequests(value);
-                    form.setValue("max_concurrent_requests", value);
-                  }}
-                  className="w-24"
-                />
-                <p className="text-xs text-gray-500">
-                  Higher values crawl faster but use more system resources
-                </p>
+            <div className="p-4 border rounded-md bg-muted/10">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="relative flex items-center justify-center h-5 w-5">
+                  <Checkbox
+                    id="unlimited-parallelism"
+                    checked={unlimitedParallelism}
+                    onCheckedChange={(checked) => {
+                      setUnlimitedParallelism(checked === true);
+                      form.setValue("unlimited_parallelism", checked === true);
+                    }}
+                    className="h-5 w-5"
+                  />
+                  {unlimitedParallelism && (
+                    <div className="absolute inset-0 flex items-center justify-center text-primary-foreground pointer-events-none">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                <label
+                  htmlFor="unlimited-parallelism"
+                  className="text-sm font-medium leading-none cursor-pointer"
+                >
+                  Unlimited parallelism (Crawl all URLs simultaneously)
+                </label>
               </div>
-            )}
+              
+              {!unlimitedParallelism && (
+                <div className="pl-8 space-y-3">
+                  <Label htmlFor="max_concurrent_requests">
+                    Parallel Crawling: <span className="font-medium text-primary">{maxConcurrentRequests} URLs</span>
+                  </Label>
+                  <div className="flex items-center space-x-4">
+                    <Input
+                      id="max_concurrent_requests"
+                      type="number"
+                      min={1}
+                      max={16}
+                      value={maxConcurrentRequests}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value) || 4;
+                        setMaxConcurrentRequests(value);
+                        form.setValue("max_concurrent_requests", value);
+                      }}
+                      className="w-24"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Higher values crawl faster but use more system resources
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="pt-6">
           <Button 
             type="submit"
             disabled={saving || !prefixPath.trim()}
+            className="min-w-40 bg-primary"
           >
             {saving ? "Saving..." : "Save Configuration"}
           </Button>

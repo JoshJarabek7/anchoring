@@ -10,7 +10,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { createSession, CrawlSession } from "../../lib/db";
 
 interface CreateSessionFormProps {
-  chromaPath: string;
   onSessionCreated: (session: CrawlSession) => void;
   onCancel: () => void;
 }
@@ -23,7 +22,6 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 export default function CreateSessionForm({ 
-  chromaPath,
   onSessionCreated, 
   onCancel 
 }: CreateSessionFormProps) {
@@ -43,7 +41,7 @@ export default function CreateSessionForm({
   const onSubmit = async (data: FormData) => {
     try {
       setSubmitting(true);
-      console.log("Creating session with data:", data, "and ChromaDB path:", chromaPath);
+      console.log("Creating session with data:", data);
       
       // Additional validation and prepare data
       if (!titleValue || titleValue.trim() === "") {
@@ -53,8 +51,7 @@ export default function CreateSessionForm({
       // Create session with manually prepared data
       const sessionData = {
         title: titleValue.trim(),
-        version: versionValue.trim(),
-        chroma_path: chromaPath
+        version: versionValue.trim()
       };
       
       console.log("Submitting session data:", sessionData);
@@ -114,15 +111,7 @@ export default function CreateSessionForm({
             />
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="chromatext">ChromaDB Path</Label>
-            <Input
-              id="chromatext"
-              value={chromaPath}
-              disabled={true}
-            />
-            <p className="text-xs text-muted-foreground">Using ChromaDB path from application settings.</p>
-          </div>
+          {/* ChromaDB path field removed - no longer needed */}
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button 

@@ -121,16 +121,26 @@ export default function ProcessingOptions({
               )}
             />
             
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center space-x-2 mb-4">
-                  <Checkbox
-                    id="unlimited-parallelism"
-                    checked={unlimitedParallelism}
-                    onCheckedChange={(checked) => {
-                      setUnlimitedParallelism(checked === true);
-                    }}
-                  />
+            <div className="space-y-6">
+              <div className="p-4 border rounded-md bg-muted/10">
+                <div className="flex items-center space-x-3 mb-5">
+                  <div className="relative flex items-center justify-center h-5 w-5">
+                    <Checkbox
+                      id="unlimited-parallelism"
+                      checked={unlimitedParallelism}
+                      onCheckedChange={(checked) => {
+                        setUnlimitedParallelism(checked === true);
+                      }}
+                      className="h-5 w-5"
+                    />
+                    {unlimitedParallelism && (
+                      <div className="absolute inset-0 flex items-center justify-center text-primary-foreground pointer-events-none">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </div>
+                    )}
+                  </div>
                   <label
                     htmlFor="unlimited-parallelism"
                     className="text-sm font-medium leading-none cursor-pointer"
@@ -140,11 +150,11 @@ export default function ProcessingOptions({
                 </div>
                 
                 {!unlimitedParallelism && (
-                  <>
-                    <Label htmlFor="parallel-processing">
-                      Parallel Processing: {parallelProcessing} URLs
+                  <div className="pl-8"> {/* Indented under checkbox */}
+                    <Label htmlFor="parallel-processing" className="block mb-2">
+                      Parallel Processing: <span className="font-medium text-primary">{parallelProcessing} URLs</span>
                     </Label>
-                    <div className="flex items-center space-x-4 mt-2">
+                    <div className="flex items-center space-x-4 mb-3">
                       <Slider
                         id="parallel-processing"
                         disabled={disabled}
@@ -160,10 +170,10 @@ export default function ProcessingOptions({
                       />
                     </div>
                     
-                    <FormDescription className="mt-2">
+                    <FormDescription className="text-xs mt-2">
                       Higher values process more URLs in parallel but use more system resources
                     </FormDescription>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -174,16 +184,21 @@ export default function ProcessingOptions({
               </div>
             </div>
           </CardContent>
-          <CardFooter className="flex justify-between pt-2">
+          <CardFooter className="flex justify-between pt-6 space-x-4">
             <Button
               type="button"
               variant="outline"
               onClick={onCancel}
               disabled={disabled}
+              className="min-w-24"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={disabled}>
+            <Button 
+              type="submit" 
+              disabled={disabled}
+              className="min-w-40 bg-primary"
+            >
               Start Processing
             </Button>
           </CardFooter>
