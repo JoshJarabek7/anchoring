@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -49,20 +49,14 @@ export default function ProcessingPipeline({
   const [currentStatus, setCurrentStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
   const [progress, setProgress] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
+  const processedUrlsRef = useRef(new Set<string>());
   const [isCancelling, setIsCancelling] = useState(false);
   const processingCancelRef = useRef(false);
 
-  // Cleanup effect to dismiss any lingering toast notifications when the component unmounts
+  // Cleanup effect is no longer needed since toasts have proper durations
   useEffect(() => {
     return () => {
-      // Dismiss any chunking toasts on unmount
-      for (let i = 1; i <= 20; i++) {
-        toast.dismiss(`chunk-${i}`);
-        toast.dismiss(`processing-${i}`);
-      }
-      
-      // Dismiss other possible toast ids
-      toast.dismiss("markdown-processing");
+      // No cleanup needed - toasts auto-dismiss
     };
   }, []);
 
@@ -94,12 +88,16 @@ export default function ProcessingPipeline({
     }
   };
 
-  const handleStartProcessing = async (options: MarkdownCleanupValues) => {
+  const handleStartProcessing = async (options: MarkdownCleanupValues & { parallelProcessing: number, unlimitedParallelism: boolean }) => {
+    // Reset processed URLs set and counter when starting new processing
+    processedUrlsRef.current.clear();
+    setProcessedCount(0);
     console.log("================================");
     console.log("STARTING PROCESSING PIPELINE");
     console.log("================================");
     console.log("Processing options:", options);
     console.log("URLs to process:", urls.length);
+    console.log(`Parallelism: ${options.unlimitedParallelism ? 'Unlimited' : options.parallelProcessing}`);
 
     if (!apiKey) {
       console.error("ERROR: No OpenAI API key provided");
@@ -138,12 +136,7 @@ export default function ProcessingPipeline({
         return;
       }
       
-      if (!apiKey) {
-        console.error("ERROR: No OpenAI API key provided");
-        toast.error("OpenAI API key is required");
-        setProcessing(false);
-        return;
-      }
+      // Note: apiKey is already validated at the beginning of this function
       
       console.log("ChromaDB path:", chromaPath);
       console.log("OpenAI API key (truncated):", `${apiKey.substring(0, 3)}...${apiKey.substring(apiKey.length - 3)}`);
@@ -187,8 +180,14 @@ export default function ProcessingPipeline({
       
       console.log("Tech details for processing:", techDetails);
 
-      console.log("Starting batch processing of URLs");
-      // Process batch
+      // Determine max concurrency based on user selection
+      const maxConcurrency = options.unlimitedParallelism ? 
+        sourcesToProcess.length : // Use all URLs if unlimited
+        options.parallelProcessing; // Otherwise use user-specified value
+      
+      console.log(`Starting batch processing of URLs with max concurrency: ${maxConcurrency}`);
+      
+      // Process batch with the desired concurrency
       processBatch(
         sourcesToProcess,
         techDetails,
@@ -198,27 +197,48 @@ export default function ProcessingPipeline({
           cleanupModel: options.model,
           temperature: options.temperature,
           maxTokens: options.maxTokens,
-          extractConcepts: true
+          extractConcepts: true,
+          maxConcurrency // Pass the concurrency setting to the processor
         },
-        (url, status, statusProgress) => {
-          console.log(`Processing status update: URL=${url}, status=${status}, progress=${statusProgress}`);
+        (url, status, statusProgress, overallProgress) => {
+          console.log(`Processing status update: URL=${url}, status=${status}, statusProgress=${statusProgress}, overallProgress=${overallProgress}`);
           setCurrentUrl(url);
           setCurrentStatus(status);
-          if (statusProgress !== undefined) {
+          
+          // Update processed count for every status update to keep the count current
+          // This ensures the count updates in real-time and not just at the end
+          if ((status === ProcessingStatus.COMPLETE || status === ProcessingStatus.ERROR) && !processedUrlsRef.current.has(url)) {
+            // Only increment if this URL hasn't been processed before
+            processedUrlsRef.current.add(url);
+            setProcessedCount(prevCount => Math.min(prevCount + 1, urls.length));
+            console.log(`URL ${url} completed. Processed count: ${processedUrlsRef.current.size}/${urls.length}`);
+          }
+          
+          // Always use the overall progress for the UI if available
+          if (overallProgress !== undefined) {
+            setProgress(overallProgress);
+          } else if (statusProgress !== undefined) {
             setProgress(statusProgress);
           }
         },
         (results) => {
           console.log("✅ Processing complete:", results.length, "URLs processed");
           console.log("Results summary:", results.map(r => `${r.url}: ${r.snippets.length} snippets`));
-          setProcessedCount(results.length);
+          
+          // Reset for next time
+          processedUrlsRef.current.clear();
+          
+          // Make sure the final count doesn't exceed the total URLs
+          const finalCount = Math.min(results.length, urls.length);
+          setProcessedCount(finalCount);
+          
           setProcessing(false);
           onComplete(results);
         }
       );
     } catch (error) {
       console.error("ERROR starting processing:", error);
-      toast.error("Failed to start processing");
+      // Only log error, no toast needed
       setProcessing(false);
     }
   };
@@ -226,14 +246,12 @@ export default function ProcessingPipeline({
   const handleCancel = () => {
     setIsCancelling(true);
     processingCancelRef.current = true;
-    toast.info("Cancelling processing. This may take a moment...");
+    // No need for toast notification
     
-    // Wait a short time to allow for any in-progress operations to attempt to check cancel state
-    setTimeout(() => {
-      setProcessing(false);
-      setIsCancelling(false);
-      onCancel();
-    }, 500);
+    // Cancel immediately - no need to wait for operations to check cancel state
+    setProcessing(false);
+    setIsCancelling(false);
+    onCancel();
   };
 
   return (

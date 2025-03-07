@@ -313,3 +313,4 @@ sketch
 !.env.*.EXAMPLE
 !mcp-server/MCP_README.md
 .chroma/*
+*.code-workspace

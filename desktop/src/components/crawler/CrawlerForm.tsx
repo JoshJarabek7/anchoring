@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Label } from "../ui/label";
+import { Checkbox } from "../ui/checkbox";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { saveCrawlSettings, CrawlSettings } from "../../lib/db";
 
@@ -20,6 +21,8 @@ const formSchema = z.object({
   prefix_path: z.string().min(1, "Prefix path is required"),
   anti_paths: z.string(),
   anti_keywords: z.string(),
+  max_concurrent_requests: z.number().int().min(1).max(16).optional(),
+  unlimited_parallelism: z.boolean().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -33,6 +36,8 @@ export default function CrawlerForm({
   const [prefixPath, setPrefixPath] = useState(existingSettings?.prefix_path || "");
   const [antiPaths, setAntiPaths] = useState(existingSettings?.anti_paths || "");
   const [antiKeywords, setAntiKeywords] = useState(existingSettings?.anti_keywords || "");
+  const [maxConcurrentRequests, setMaxConcurrentRequests] = useState(existingSettings?.max_concurrent_requests || 4);
+  const [unlimitedParallelism, setUnlimitedParallelism] = useState(existingSettings?.unlimited_parallelism || false);
   
   // Update local state when existingSettings changes
   useEffect(() => {
@@ -41,12 +46,16 @@ export default function CrawlerForm({
       setPrefixPath(existingSettings.prefix_path || "");
       setAntiPaths(existingSettings.anti_paths || "");
       setAntiKeywords(existingSettings.anti_keywords || "");
+      setMaxConcurrentRequests(existingSettings.max_concurrent_requests || 4);
+      setUnlimitedParallelism(existingSettings.unlimited_parallelism || false);
       
       // Also update the form state
       form.reset({
         prefix_path: existingSettings.prefix_path || "",
         anti_paths: existingSettings.anti_paths || "",
         anti_keywords: existingSettings.anti_keywords || "",
+        max_concurrent_requests: existingSettings.max_concurrent_requests || 4,
+        unlimited_parallelism: existingSettings.unlimited_parallelism || false,
       });
     }
   }, [existingSettings]);
@@ -57,6 +66,8 @@ export default function CrawlerForm({
       prefix_path: existingSettings?.prefix_path || "",
       anti_paths: existingSettings?.anti_paths || "",
       anti_keywords: existingSettings?.anti_keywords || "",
+      max_concurrent_requests: existingSettings?.max_concurrent_requests || 4,
+      unlimited_parallelism: existingSettings?.unlimited_parallelism || false,
     },
     mode: "all",
   });
@@ -71,6 +82,8 @@ export default function CrawlerForm({
         prefix_path: prefixPath.trim(),
         anti_paths: antiPaths.trim(),
         anti_keywords: antiKeywords.trim(),
+        max_concurrent_requests: unlimitedParallelism ? 32 : maxConcurrentRequests,
+        unlimited_parallelism: unlimitedParallelism,
       });
       
       onSettingsSaved(settings);
@@ -151,6 +164,51 @@ export default function CrawlerForm({
             <p className="text-xs text-gray-500">
               Comma-separated list of keywords to exclude from crawling.
             </p>
+          </div>
+          
+          <div className="border-t pt-4 space-y-4">
+            <h3 className="font-medium">Parallelism Settings</h3>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="unlimited-parallelism"
+                checked={unlimitedParallelism}
+                onCheckedChange={(checked) => {
+                  setUnlimitedParallelism(checked === true);
+                  form.setValue("unlimited_parallelism", checked === true);
+                }}
+              />
+              <label
+                htmlFor="unlimited-parallelism"
+                className="text-sm font-medium leading-none cursor-pointer"
+              >
+                Unlimited parallelism (Crawl all URLs simultaneously)
+              </label>
+            </div>
+            
+            {!unlimitedParallelism && (
+              <div className="space-y-2">
+                <Label htmlFor="max_concurrent_requests">
+                  Parallel Crawling: {maxConcurrentRequests} URLs
+                </Label>
+                <Input
+                  id="max_concurrent_requests"
+                  type="number"
+                  min={1}
+                  max={16}
+                  value={maxConcurrentRequests}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 4;
+                    setMaxConcurrentRequests(value);
+                    form.setValue("max_concurrent_requests", value);
+                  }}
+                  className="w-24"
+                />
+                <p className="text-xs text-gray-500">
+                  Higher values crawl faster but use more system resources
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
         <CardFooter>

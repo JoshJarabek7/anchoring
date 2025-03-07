@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { 
   Card, 
   CardContent, 
@@ -21,6 +21,7 @@ import { Badge } from "../ui/badge";
 import { useProcessedUrls } from "../../hooks/useProcessedUrls";
 import { useSnippets } from "../../hooks/useSnippets";
 import SnippetViewer from "./SnippetViewer";
+import KnowledgeBase from './KnowledgeBase';
 
 interface AiProcessingProps {
   sessionId: number;
@@ -96,24 +97,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
     clearSnippets
   } = useSnippets(chromaPath, apiKey);
   
-  // Add cleanup for any lingering toast notifications
-  useEffect(() => {
-    // Clear any lingering toast notifications when component mounts
-    for (let i = 1; i <= 20; i++) {
-      toast.dismiss(`chunk-${i}`);
-      toast.dismiss(`processing-${i}`);
-    }
-    toast.dismiss("markdown-processing");
-    
-    // Return cleanup function for when component unmounts
-    return () => {
-      for (let i = 1; i <= 20; i++) {
-        toast.dismiss(`chunk-${i}`);
-        toast.dismiss(`processing-${i}`);
-      }
-      toast.dismiss("markdown-processing");
-    };
-  }, []);
+  // No cleanup needed - toasts auto-dismiss
   
   // Load saved AI processing settings
   const loadAiProcessingSettings = async () => {
@@ -274,9 +258,6 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
     // Set loading state
     setLoading(true);
     
-    // Small delay to let React update the UI first
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
     // Force reload of URLs with the new setting
     try {
       const data = await getURLs(sessionId);
@@ -343,7 +324,10 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
     // Mark them as processed in the database and update our state
     await markUrlsAsProcessed(newProcessedUrls);
     
-    toast.success(`Processed ${newProcessedUrls.length} URLs successfully`);
+    // Only show toast for small batches to reduce notification overload
+    if (newProcessedUrls.length <= 3) {
+      toast.success(`Processed ${newProcessedUrls.length} URLs successfully`, { duration: 2000 });
+    }
     
     // Instead of reloading all URLs, just update our state to avoid a full refresh
     // This makes the UI more reactive without losing position
@@ -583,7 +567,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
           
           {/* Tabbed Interface for URLs */}
           <Tabs defaultValue="to-process" className="w-full">
-            <TabsList className="grid grid-cols-2 mb-4">
+            <TabsList className="grid grid-cols-3 mb-4">
               <TabsTrigger value="to-process">URLs to Process</TabsTrigger>
               <TabsTrigger value="processed" className="relative">
                 Processed URLs
@@ -593,6 +577,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="knowledge-base">Knowledge Base</TabsTrigger>
             </TabsList>
             
             <TabsContent value="to-process" className="space-y-4">
@@ -671,7 +656,7 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
                         Click on a URL to view its snippets.
                       </p>
                       
-                      <ScrollArea className="h-[250px] border rounded-md p-3">
+                      <ScrollArea className="h-[500px] border rounded-md p-3">
                         <div className="space-y-3">
                           {processedUrls.map((url) => (
                             <PreviewSnippets 
@@ -687,6 +672,13 @@ export default function AiProcessing({ sessionId, chromaPath, apiKey }: AiProces
                   )}
                 </>
               )}
+            </TabsContent>
+            
+            <TabsContent value="knowledge-base" className="space-y-4">
+              <KnowledgeBase 
+                chromaPath={chromaPath}
+                apiKey={apiKey}
+              />
             </TabsContent>
           </Tabs>
         </CardContent>

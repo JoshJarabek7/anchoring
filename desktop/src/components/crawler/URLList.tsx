@@ -33,7 +33,7 @@ import {
   FilterX,
   Settings
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,11 +55,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "../ui/popover";
+// Removed popover imports as they're no longer needed
 
 interface URLListProps {
   sessionId: number;
@@ -580,40 +576,31 @@ export default function URLList({ sessionId, onStartCrawling, refreshTrigger = 0
             </Select>
           </div>
           
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="icon" title="Crawl Options">
-                <Settings className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80">
-              <div className="space-y-4">
-                <h4 className="font-medium">Crawl Options</h4>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="skip-processed" 
-                    checked={crawlOptions.skipProcessed}
-                    onCheckedChange={(checked) => 
-                      handleCrawlOptionChange('skipProcessed', checked === true)
-                    }
-                  />
-                  <Label htmlFor="skip-processed">Skip already processed URLs</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="pending-only" 
-                    checked={crawlOptions.crawlPendingOnly}
-                    onCheckedChange={(checked) => 
-                      handleCrawlOptionChange('crawlPendingOnly', checked === true)
-                    }
-                  />
-                  <Label htmlFor="pending-only">Only crawl URLs with 'pending' status</Label>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+          <div className="border p-3 rounded-md space-y-2 ml-2">
+            <h4 className="text-sm font-medium mb-2">Crawl Options</h4>
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="skip-processed" 
+                checked={crawlOptions.skipProcessed}
+                onCheckedChange={(checked) => 
+                  handleCrawlOptionChange('skipProcessed', checked === true)
+                }
+              />
+              <Label htmlFor="skip-processed" className="cursor-pointer text-sm">Skip already processed URLs</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="pending-only" 
+                checked={crawlOptions.crawlPendingOnly}
+                onCheckedChange={(checked) => 
+                  handleCrawlOptionChange('crawlPendingOnly', checked === true)
+                }
+              />
+              <Label htmlFor="pending-only" className="cursor-pointer text-sm">Only crawl URLs with 'pending' status</Label>
+            </div>
+          </div>
           
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 ml-2">
             <Switch 
               id="auto-refresh" 
               checked={autoRefreshEnabled}

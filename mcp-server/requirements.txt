@@ -5,3 +5,4 @@ tiktoken
 openai
 numpy
 python-dotenv
+semantic-text-splitter

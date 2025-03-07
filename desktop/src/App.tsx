@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 // Import fs plugin dynamically to prevent CORS issues during development
 // import { exists } from "@tauri-apps/plugin-fs";
 
@@ -19,6 +19,7 @@ import CrawlerForm from "./components/crawler/CrawlerForm";
 import UrlInput from "./components/crawler/UrlInput";
 import URLList from "./components/crawler/URLList";
 import AiProcessing from "./components/crawler/AiProcessing";
+import KnowledgeBase from "./components/knowledge/KnowledgeBase";
 
 // Setup screen component
 const SetupScreen = ({ onSetup }: { onSetup: (path: string) => void }) => {
@@ -356,16 +357,9 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
   const [activeSession, setActiveSession] = useState<CrawlSession | null>(null);
   const [apiKey, setApiKey] = useState("");
   
-  // Add a function to clear toasts when changing tabs
+  // Function to change active tab
   const handleTabChange = (value: string) => {
-    // Clear any lingering toasts
-    for (let i = 1; i <= 20; i++) {
-      toast.dismiss(`chunk-${i}`);
-      toast.dismiss(`processing-${i}`);
-    }
-    toast.dismiss("markdown-processing");
-    
-    // Set the active tab
+    // No need to manually dismiss toasts anymore - they auto-dismiss
     setActiveTab(value);
   };
   
@@ -405,10 +399,11 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
         onValueChange={handleTabChange} 
         className="space-y-4"
       >
-        <TabsList className="grid grid-cols-4">
+        <TabsList className="grid grid-cols-5">
           <TabsTrigger value="sessions">Sessions</TabsTrigger>
           <TabsTrigger value="crawler">Crawler</TabsTrigger>
           <TabsTrigger value="processing">AI Processing</TabsTrigger>
+          <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
         
@@ -429,6 +424,10 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
             chromaPath={chromaPath}
             apiKey={apiKey}
           />
+        </TabsContent>
+        
+        <TabsContent value="knowledge">
+          <KnowledgeBase apiKey={apiKey} />
         </TabsContent>
         
         <TabsContent value="settings">
