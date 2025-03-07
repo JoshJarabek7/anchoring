@@ -2,7 +2,9 @@
 
 @plugin "tailwindcss-animate";
 
-@custom-variant dark (&:is(.dark *));
+@plugin "@tailwindcss/typography";
+
+@config "../tailwind.config.js";
 
 :root {
   --background: oklch(1 0 0);

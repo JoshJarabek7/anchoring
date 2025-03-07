@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Trash2, Copy, Download, Upload } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { getSessions, CrawlSession, deleteSession, duplicateSession, exportSession, importSession } from "../../lib/db";
 
 interface SessionListProps {

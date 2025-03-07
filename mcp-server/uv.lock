@@ -660,6 +660,7 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "semantic-text-splitter" },
     { name = "tiktoken" },
 ]
 
@@ -671,6 +672,7 @@ requires-dist = [
     { name = "openai", specifier = ">=1.65.4" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
+    { name = "semantic-text-splitter", specifier = ">=0.24.1" },
     { name = "tiktoken", specifier = ">=0.9.0" },
 ]
 
@@ -1395,6 +1397,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/aa/65/7d973b89c4d2351d7fb232c2e452547ddfa243e93131e7cfa766da627b52/rsa-4.9.tar.gz", hash = "sha256:e38464a49c6c85d7f1351b0126661487a7e0a14a50f1675ec50eb34d4f20ef21", size = 29711 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/97/fa78e3d2f65c02c8e1268b9aba606569fe97f6c8f7c2d74394553347c145/rsa-4.9-py3-none-any.whl", hash = "sha256:90260d9058e514786967344d0ef75fa8727eed8a7d2e43ce9f4bcf1b536174f7", size = 34315 },
+]
+
+[[package]]
+name = "semantic-text-splitter"
+version = "0.24.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/1a/5d3fced72b1805938903c73691178644e91efbbaebe0710bdaf27318166d/semantic_text_splitter-0.24.1.tar.gz", hash = "sha256:54094290759bc36414b400106837fd5b77c9e8ff68d9b826cfcacf3c781c145e", size = 290152 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/4f/ae349a3faefcc1ba3441681235ea25e8625addb9487df35fcbf6a9782c27/semantic_text_splitter-0.24.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:8c70448e1ca4cea8ba3e3b0a7ee71ab6e920f02ad0ea9b3da08af1389ad8b21f", size = 8097655 },
+    { url = "https://files.pythonhosted.org/packages/1d/34/72e80966e34c80b0aeb23caf5c0fe1236ddfa6720e7c31f03aa3a2e8bfd0/semantic_text_splitter-0.24.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ce90108e35faf520258acf04e09f15bd5441a85e5a1b91117a37671df531b418", size = 8090135 },
+    { url = "https://files.pythonhosted.org/packages/a0/d9/19aae997399b82bdf857dfc52d4cbe31c0e67126960a079036454d4993a8/semantic_text_splitter-0.24.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d7181bf4b03bc3819a7a948cc7a7ca1e597cee868552238ae16fe2bd24362dda", size = 8303200 },
+    { url = "https://files.pythonhosted.org/packages/6d/d8/027b3f55c7824e7e06fd403a2372eecdf5e0754042de719320420b1ee69e/semantic_text_splitter-0.24.1-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:0141107e37651888033d622f06d3efd2d5f9d2affd1207bd63b0790e791f3cea", size = 8182711 },
+    { url = "https://files.pythonhosted.org/packages/2b/f1/8ab9a19fa33367f71c67d6fdd762d4edc3e32240699896a7f35b6985173a/semantic_text_splitter-0.24.1-cp39-abi3-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:73fa618e822c330e4a5999e9d8af3b56d92870d087caf8eeab6eb496cf1fc11d", size = 8426255 },
+    { url = "https://files.pythonhosted.org/packages/c6/c1/1889eddf4fc7d8430a477111bc0b4cd3289f4391b77aef14fa80b865fe6d/semantic_text_splitter-0.24.1-cp39-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:85be9d6cf447837556a1e48bda77841c8124000a3985321ebef2ea487ed9275a", size = 8508183 },
+    { url = "https://files.pythonhosted.org/packages/64/98/39365e58938ebb8dd557cd15f5b143528c27f2d7aee49230716b46cae441/semantic_text_splitter-0.24.1-cp39-abi3-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:5cdc37ccf410aad2d5026087ae366d0c67a86d609832dde04a0637a175381c42", size = 8752386 },
+    { url = "https://files.pythonhosted.org/packages/4f/97/66dc80b9463192a1cf1dd05f96986bcd60c2bf5e037fe0f7d2954d80de40/semantic_text_splitter-0.24.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4c0c3f7d2c2973f830bbcce86553f4751ece46272889b07365543585bc24e56a", size = 8389794 },
+    { url = "https://files.pythonhosted.org/packages/90/1b/157f989ad1319b88a39c99987494ee1cc05d18e598232dda4e51881ecc50/semantic_text_splitter-0.24.1-cp39-abi3-win32.whl", hash = "sha256:37b63a2e76e8c5d63113a54e65901530c2214255a0225e77c4017410c7f0f5a3", size = 7626080 },
+    { url = "https://files.pythonhosted.org/packages/3e/5b/f7a8fcb69615054bd11cafb7a1c8ada8dfff099fd9322654dadf487e4823/semantic_text_splitter-0.24.1-cp39-abi3-win_amd64.whl", hash = "sha256:e5ca1c36fcdf390855b0ea74376c029d2f9a10d5f6b8bb268a4a321a3b77e91b", size = 7800170 },
 ]
 
 [[package]]

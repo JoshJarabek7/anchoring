@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import * as fs from '@tauri-apps/plugin-fs';
 
 import { Button } from "@/components/ui/button";

@@ -29,10 +29,12 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { markdownCleanupFormSchema, type MarkdownCleanupValues } from "@/types/forms";
 
 interface ProcessingOptionsProps {
-  onSubmit: (values: MarkdownCleanupValues) => void;
+  onSubmit: (values: MarkdownCleanupValues & { parallelProcessing: number, unlimitedParallelism: boolean }) => void;
   onCancel: () => void;
   disabled?: boolean;
 }
@@ -43,6 +45,8 @@ export default function ProcessingOptions({
   disabled = false,
 }: ProcessingOptionsProps) {
   const [temperature, setTemperature] = useState(0.2);
+  const [parallelProcessing, setParallelProcessing] = useState(4); // Default to 4 concurrent
+  const [unlimitedParallelism, setUnlimitedParallelism] = useState(false);
   
   const form = useForm<MarkdownCleanupValues>({
     resolver: zodResolver(markdownCleanupFormSchema),
@@ -54,7 +58,11 @@ export default function ProcessingOptions({
   });
 
   const handleSubmit = (values: MarkdownCleanupValues) => {
-    onSubmit(values);
+    onSubmit({
+      ...values,
+      parallelProcessing,
+      unlimitedParallelism
+    });
   };
 
   return (
@@ -112,6 +120,53 @@ export default function ProcessingOptions({
                 </FormItem>
               )}
             />
+            
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center space-x-2 mb-4">
+                  <Checkbox
+                    id="unlimited-parallelism"
+                    checked={unlimitedParallelism}
+                    onCheckedChange={(checked) => {
+                      setUnlimitedParallelism(checked === true);
+                    }}
+                  />
+                  <label
+                    htmlFor="unlimited-parallelism"
+                    className="text-sm font-medium leading-none cursor-pointer"
+                  >
+                    Unlimited parallelism (Process all URLs simultaneously)
+                  </label>
+                </div>
+                
+                {!unlimitedParallelism && (
+                  <>
+                    <Label htmlFor="parallel-processing">
+                      Parallel Processing: {parallelProcessing} URLs
+                    </Label>
+                    <div className="flex items-center space-x-4 mt-2">
+                      <Slider
+                        id="parallel-processing"
+                        disabled={disabled}
+                        min={1}
+                        max={16}
+                        step={1}
+                        defaultValue={[parallelProcessing]}
+                        value={[parallelProcessing]}
+                        onValueChange={(values) => {
+                          setParallelProcessing(values[0]);
+                        }}
+                        className="flex-grow"
+                      />
+                    </div>
+                    
+                    <FormDescription className="mt-2">
+                      Higher values process more URLs in parallel but use more system resources
+                    </FormDescription>
+                  </>
+                )}
+              </div>
+            </div>
             
             <div className="rounded-lg border p-4 bg-muted/20 mb-6">
               <div className="text-sm text-muted-foreground">

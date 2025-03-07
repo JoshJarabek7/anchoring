@@ -122,7 +122,7 @@ fn wait_for_document_ready(tab: &headless_chrome::Tab) -> Result<(), String> {
         
         document.addEventListener('readystatechange', () => {
             if (document.readyState === 'complete') {
-                setTimeout(() => resolve(true), 500);
+                resolve(true);
             }
         });
     })
@@ -143,21 +143,22 @@ fn scroll_page_for_lazy_loading(tab: &headless_chrome::Tab) -> Result<(), String
             document.documentElement.scrollHeight
         );
         
-        let currentPosition = 0;
-        const step = window.innerHeight / 2;
+        // Faster scrolling - directly jump to several positions to trigger lazy loading
+        // This is more efficient than the previous incremental approach
+        const positions = [
+            0,                    // Top
+            maxHeight * 0.25,     // 25% down
+            maxHeight * 0.5,      // 50% down 
+            maxHeight * 0.75,     // 75% down
+            maxHeight,            // Bottom
+            0                     // Back to top
+        ];
         
-        function doScroll() {
-            if (currentPosition < maxHeight) {
-                currentPosition += step;
-                window.scrollTo(0, currentPosition);
-                setTimeout(doScroll, 100);
-            } else {
-                window.scrollTo(0, 0);
-                resolve(true);
-            }
-        }
+        // Execute all scrolls immediately without timeouts
+        positions.forEach(pos => window.scrollTo(0, pos));
         
-        doScroll();
+        // Resolve immediately after scrolling is complete
+        resolve(true);
     })
     "#;
     
@@ -377,6 +378,197 @@ fn count_tokens(text: String, model_type: String) -> Result<usize, String> {
 }
 
 
+/// Perform a vector search on processed content
+/// 
+/// This function searches through vector embeddings of processed content
+/// using a query string and returns the most semantically similar results.
+#[tauri::command]
+async fn vector_search(query: String, session_id: Option<u64>, limit: Option<u32>) -> Result<Vec<SearchResult>, String> {
+    use std::time::Instant;
+    
+    println!("Performing vector search with query: {}", query);
+    
+    let start = Instant::now();
+    let search_limit = limit.unwrap_or(10);
+    let session_filter = session_id.map(|id| format!("session_id = {}", id));
+    
+    // For now, return a mock response
+    // In a real implementation, this would:
+    // 1. Convert the query to an embedding using the same model as during processing
+    // 2. Perform a vector similarity search in the database
+    // 3. Return the closest matches with their metadata
+    
+    let duration = start.elapsed();
+    println!("✅ Vector search completed in {}ms", duration.as_millis());
+    
+    // Mock response for now
+    let results = mock_vector_search_results(&query, search_limit as usize);
+    Ok(results)
+}
+
+/// Mock search results structure
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SearchResult {
+    id: String,
+    score: f32,
+    snippet: DocSnippet,
+}
+
+/// Doc snippet structure
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DocSnippet {
+    id: String,
+    title: String,
+    content: String,
+    source: String,
+    category: String,
+    name: String,
+    version: Option<String>,
+}
+
+/// Generate mock vector search results
+fn mock_vector_search_results(query: &str, limit: usize) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+    
+    // Sample results
+    if query.to_lowercase().contains("react") {
+        results.push(SearchResult {
+            id: "mock-1".to_string(),
+            score: 0.95,
+            snippet: DocSnippet {
+                id: "snippet-1".to_string(),
+                title: "React Hooks Usage".to_string(),
+                content: "
+```jsx
+import React, { useState, useEffect } from 'react';
+
+function Example() {
+  const [count, setCount] = useState(0);
+  
+  useEffect(() => {
+    document.title = `You clicked ${count} times`;
+  }, [count]);
+  
+  return (
+    <div>
+      <p>You clicked {count} times</p>
+      <button onClick={() => setCount(count + 1)}>
+        Click me
+      </button>
+    </div>
+  );
+}
+```
+                ".to_string(),
+                source: "https://reactjs.org/docs/hooks-overview.html".to_string(),
+                category: "library".to_string(),
+                name: "react".to_string(),
+                version: Some("18.3.0".to_string()),
+            }
+        });
+    }
+    
+    if query.to_lowercase().contains("tauri") {
+        results.push(SearchResult {
+            id: "mock-2".to_string(),
+            score: 0.92,
+            snippet: DocSnippet {
+                id: "snippet-2".to_string(),
+                title: "Tauri Commands".to_string(),
+                content: "
+```rust
+#[tauri::command]
+fn greet(name: &str) -> String {
+  format!(\"Hello, {}!\", name)
+}
+
+#[tauri::command]
+async fn perform_request(url: String) -> Result<String, String> {
+  let response = reqwest::get(&url)
+    .await
+    .map_err(|e| e.to_string())?
+    .text()
+    .await
+    .map_err(|e| e.to_string())?;
+  
+  Ok(response)
+}
+
+fn main() {
+  tauri::Builder::default()
+    .invoke_handler(tauri::generate_handler![greet, perform_request])
+    .run(tauri::generate_context!())
+    .expect(\"failed to run app\");
+}
+```
+                ".to_string(),
+                source: "https://tauri.app/v2/guides/features/command/".to_string(),
+                category: "framework".to_string(),
+                name: "Tauri".to_string(),
+                version: Some("2.3.1".to_string()),
+            }
+        });
+    }
+    
+    // Add some generic results if we don't have specific matches
+    if results.len() < limit {
+        results.push(SearchResult {
+            id: "mock-generic-1".to_string(),
+            score: 0.82,
+            snippet: DocSnippet {
+                id: "snippet-generic-1".to_string(),
+                title: "TypeScript Interfaces vs Types".to_string(),
+                content: "
+```typescript
+// Interface
+interface User {
+  id: number;
+  name: string;
+  email?: string;
+}
+
+// Type
+type User = {
+  id: number;
+  name: string;
+  email?: string;
+};
+
+// Extending an interface
+interface Animal {
+  name: string;
+}
+
+interface Dog extends Animal {
+  breed: string;
+}
+
+// Extending a type
+type Animal = {
+  name: string;
+};
+
+type Dog = Animal & {
+  breed: string;
+};
+```
+                ".to_string(),
+                source: "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html".to_string(),
+                category: "language".to_string(),
+                name: "TypeScript".to_string(),
+                version: Some("5.6.2".to_string()),
+            }
+        });
+    }
+    
+    // Limit results
+    if results.len() > limit {
+        results.truncate(limit);
+    }
+    
+    results
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -392,7 +584,8 @@ pub fn run() {
             fetch_with_headless_browser,
             convert_html_to_markdown,
             split_text_by_tokens,
-            count_tokens
+            count_tokens,
+            vector_search
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
