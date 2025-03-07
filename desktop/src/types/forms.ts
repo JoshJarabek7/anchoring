@@ -25,7 +25,6 @@ export type SessionFormValues = z.infer<typeof sessionFormSchema>;
  */
 export const apiSettingsFormSchema = z.object({
   openai_key: z.string().optional(),
-  chroma_path: z.string().optional(),
 });
 
 export type ApiSettingsValues = z.infer<typeof apiSettingsFormSchema>;

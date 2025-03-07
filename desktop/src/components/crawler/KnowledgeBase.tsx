@@ -14,11 +14,10 @@ import { toast } from '@/components/ui/sonner';
 import { DocumentationCategory } from '@/lib/db';
 
 interface KnowledgeBaseProps {
-  chromaPath: string;
   apiKey: string;
 }
 
-export default function KnowledgeBase({ chromaPath, apiKey }: KnowledgeBaseProps) {
+export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
   const [searchInput, setSearchInput] = useState('');
   const [openSourceUrl, setOpenSourceUrl] = useState<string | null>(null);
   const {
@@ -32,7 +31,7 @@ export default function KnowledgeBase({ chromaPath, apiKey }: KnowledgeBaseProps
     updateFilters,
     clearSearch,
     loadAvailableComponents
-  } = useKnowledgeBase(chromaPath, apiKey);
+  } = useKnowledgeBase(apiKey);
 
   // Execute search on enter key or submit
   const handleSearch = async (e?: React.FormEvent) => {

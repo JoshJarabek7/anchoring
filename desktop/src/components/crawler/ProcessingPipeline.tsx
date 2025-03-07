@@ -15,7 +15,6 @@ import ProcessingOptions from "./ProcessingOptions";
 interface ProcessingPipelineProps {
   urls: { id: number; url: string; html?: string }[];
   apiKey: string;
-  chromaPath: string;
   sessionId: number;
   category: DocumentationCategory;
   language?: string;
@@ -31,7 +30,6 @@ interface ProcessingPipelineProps {
 export default function ProcessingPipeline({
   urls,
   apiKey,
-  chromaPath,
   // sessionId, - Not used yet
   category,
   language,
@@ -128,44 +126,23 @@ export default function ProcessingPipeline({
       setShowOptions(false);
       setProcessing(true);
 
-      // Make sure we have required values
-      if (!chromaPath) {
-        console.error("ERROR: No ChromaDB path provided");
-        toast.error("ChromaDB path is required");
-        setProcessing(false);
-        return;
-      }
-      
       // Note: apiKey is already validated at the beginning of this function
-      
-      console.log("ChromaDB path:", chromaPath);
       console.log("OpenAI API key (truncated):", `${apiKey.substring(0, 3)}...${apiKey.substring(apiKey.length - 3)}`);
       
-      // First verify the ChromaDB path exists
+      // Create a new ChromaDB client (now using HTTP connection)
+      console.log("Creating ChromaDB client");
+      const chromaClient = new ChromaClient(apiKey);
+      console.log("Initializing ChromaDB client...");
+      
       try {
-        console.log("Checking if ChromaDB path exists:", chromaPath);
-        const exists = await (window as any).__TAURI__.fs.exists(chromaPath);
-        if (!exists) {
-          console.error(`ERROR: ChromaDB path does not exist: ${chromaPath}`);
-          toast.error(`ChromaDB path does not exist: ${chromaPath}`);
-          setProcessing(false);
-          return;
-        }
-        
-        console.log("✅ ChromaDB path exists:", chromaPath);
+        await chromaClient.initialize();
+        console.log("✅ ChromaDB client initialized");
       } catch (error) {
-        console.error("ERROR checking ChromaDB path:", error);
-        toast.error(`Error checking ChromaDB path: ${error instanceof Error ? error.message : String(error)}`);
+        console.error("ERROR initializing ChromaDB client:", error);
+        toast.error(`Error connecting to ChromaDB: ${error instanceof Error ? error.message : String(error)}`);
         setProcessing(false);
         return;
       }
-      
-      // Create a new ChromaDB client
-      console.log("Creating ChromaDB client with path:", chromaPath);
-      const chromaClient = new ChromaClient(chromaPath, apiKey);
-      console.log("Initializing ChromaDB client...");
-      await chromaClient.initialize();
-      console.log("✅ ChromaDB client initialized");
       
       // Get tech details from props - this ensures we use the saved values
       const techDetails: TechDetails = {

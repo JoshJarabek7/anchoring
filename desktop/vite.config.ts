@@ -9,6 +9,8 @@ const mobile = process.env.TAURI_PLATFORM === "android" || process.env.TAURI_PLA
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Environment variables starting with VITE_ or TAURI_ENV_* will be exposed
+  envPrefix: ['VITE_', 'TAURI_ENV_*'],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src")

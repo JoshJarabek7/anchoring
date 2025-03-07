@@ -19,7 +19,6 @@ export default function ApiSettings() {
     resolver: zodResolver(apiSettingsFormSchema),
     defaultValues: {
       openai_key: "",
-      chroma_path: "",
     },
   });
   
@@ -32,11 +31,6 @@ export default function ApiSettings() {
       if (settings.openai_key) {
         form.setValue("openai_key", settings.openai_key);
       }
-      
-      if (settings.chroma_path) {
-        form.setValue("chroma_path", settings.chroma_path);
-        console.log("Setting ChromaDB path in form:", settings.chroma_path);
-      }
     } catch (error) {
       console.error("Failed to load API settings:", error);
     } finally {
@@ -44,61 +38,31 @@ export default function ApiSettings() {
     }
   };
   
-  const validateChromaPath = async (path: string): Promise<boolean> => {
-    if (!path) return false;
-    
-    try {
-      const pathExists = await fs.exists(path);
-      if (!pathExists) {
-        // Try to create the directory
-        await fs.mkdir(path, { recursive: true });
-        return true;
-      }
-      return true;
-    } catch (error) {
-      console.error("Error validating ChromaDB path:", error);
-      return false;
-    }
-  };
+  // ChromaDB path validation no longer needed - using HTTP endpoint instead
   
   const onSubmit = async (data: ApiSettingsValues) => {
     try {
       setSaving(true);
       
-      // Validate ChromaDB path if provided
-      if (data.chroma_path) {
-        const isValid = await validateChromaPath(data.chroma_path);
-        if (!isValid) {
-          toast.error("Invalid ChromaDB path. Please check the directory exists and is accessible.");
-          setSaving(false);
-          return;
-        }
-      }
-      
       console.log("Saving settings to database:", data);
       
-      // Save the settings
+      // Save the settings - only OpenAI key needed now
       await saveUserSettings({
         openai_key: data.openai_key,
-        chroma_path: data.chroma_path,
       });
       
       // Get the saved settings to confirm
       const savedSettings = await getUserSettings();
       console.log("Saved settings confirmed:", savedSettings);
       
-      toast.success("API settings saved successfully");
-      
-      // Reload the page to apply the new settings if path has changed
-      if (data.chroma_path && form.formState.isDirty && form.formState.dirtyFields.chroma_path) {
-        toast.info("Application will reload to apply the new ChromaDB path");
-        setTimeout(() => {
-          window.location.reload();
-        }, 1500);
-      }
+      toast.success("API key saved successfully", {
+        id: "api-settings-success"
+      });
     } catch (error) {
       console.error("Failed to save API settings:", error);
-      toast.error("Failed to save API settings. Please try again.");
+      toast.error("Failed to save API settings. Please try again.", {
+        id: "api-settings-error" 
+      });
     } finally {
       setSaving(false);
     }
@@ -140,27 +104,7 @@ export default function ApiSettings() {
                 )}
               />
               
-              <FormField
-                control={form.control}
-                name="chroma_path"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>ChromaDB Path</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="text"
-                        placeholder="/path/to/chromadb"
-                        {...field}
-                        disabled={loading}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Directory where ChromaDB will store vector embeddings. This path will be used for all new sessions by default.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* ChromaDB path field removed - using HTTP container instead */}
             </div>
           </CardContent>
           <CardFooter>

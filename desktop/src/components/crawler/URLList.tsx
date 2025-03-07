@@ -111,7 +111,7 @@ export default function URLList({ sessionId, onStartCrawling, refreshTrigger = 0
         setLoading(true);
       }
       
-      const data = await getURLs(sessionId);
+      const data = await getURLs(sessionId, false); // Don't include content
       setUrls(data);
       
       // Apply current filter
@@ -154,7 +154,7 @@ export default function URLList({ sessionId, onStartCrawling, refreshTrigger = 0
     if (!sessionId || !initialLoadComplete) return;
     
     try {
-      const data = await getURLs(sessionId);
+      const data = await getURLs(sessionId, false); // Don't include content
       
       // Only update if we have new URLs or changes
       if (data.length !== urls.length) {
@@ -350,17 +350,12 @@ export default function URLList({ sessionId, onStartCrawling, refreshTrigger = 0
   
   const handleViewDetails = async (url: CrawlURL) => {
     try {
-      // If we have the full URL data (html, markdown, etc.), use it directly
-      if (url.html || url.markdown || url.cleaned_markdown) {
-        setSelectedUrlDetail(url);
+      // Always fetch the full URL data since our list now only contains metadata
+      const fullUrl = await getURLByUrl(sessionId, url.url);
+      if (fullUrl) {
+        setSelectedUrlDetail(fullUrl);
       } else {
-        // Otherwise, fetch the full URL data
-        const fullUrl = await getURLByUrl(sessionId, url.url);
-        if (fullUrl) {
-          setSelectedUrlDetail(fullUrl);
-        } else {
-          setSelectedUrlDetail(url);
-        }
+        setSelectedUrlDetail(url);
       }
       setDetailModalOpen(true);
     } catch (error) {

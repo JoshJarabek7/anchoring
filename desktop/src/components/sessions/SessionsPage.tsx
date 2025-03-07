@@ -4,11 +4,10 @@ import CreateSessionForm from "./CreateSessionForm";
 import { CrawlSession } from "../../lib/db";
 
 interface SessionsPageProps {
-  chromaPath: string;
   onSelectSession: (session: CrawlSession) => void;
 }
 
-export default function SessionsPage({ chromaPath, onSelectSession }: SessionsPageProps) {
+export default function SessionsPage({ onSelectSession }: SessionsPageProps) {
   const [isCreating, setIsCreating] = useState(false);
   
   const handleCreateSession = () => {
@@ -28,7 +27,6 @@ export default function SessionsPage({ chromaPath, onSelectSession }: SessionsPa
     <div>
       {isCreating ? (
         <CreateSessionForm 
-          chromaPath={chromaPath}
           onSessionCreated={handleSessionCreated}
           onCancel={handleCancel}
         />
