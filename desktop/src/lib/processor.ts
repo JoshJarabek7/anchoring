@@ -71,7 +71,7 @@ export async function processMarkdownIntoSnippets(
       throw new Error("Invalid markdown format: not a string");
     }
     
-    const chunks = await chunkTextRecursively(markdown, 100000, "gpt-4o-mini", 0, "markdown");
+    const chunks = await chunkTextRecursively(markdown, 120000, "gpt-4o-mini", 500, "markdown");
     console.log(`Markdown split into ${chunks.length} chunks`);
     
     const allSnippets: FullDocumentationSnippet[] = [];
@@ -101,11 +101,11 @@ export async function processMarkdownIntoSnippets(
               messages: [
                 {
                   role: "system",
-                  content: "You are a documentation processor that extracts meaningful, self-contained documentation snippets from markdown content. For each logical section, create a separate snippet with a descriptive title, a brief summary description (1-2 sentences), the content itself, and a list of key concepts covered."
+                  content: "You are a technical documentation processor that extracts comprehensive, self-contained documentation snippets from markdown content. Your goal is to create meaningful, substantial snippets that each contain a complete explanation of a concept or feature. Follow these guidelines:\n\n1. Focus on educational content and actual documentation, not metadata or navigation elements\n2. Combine related small sections into larger, more useful snippets\n3. Remove irrelevant links, navigation references, and unnecessary formatting\n4. Make sure each snippet is substantial enough to be useful on its own\n5. Snippets should be at least several paragraphs long when possible\n6. Never include URLs, navigation breadcrumbs, or revision history"
                 },
                 {
                   role: "user",
-                  content: `${chunkHeader}Split this documentation markdown into logical, self-contained snippets. Each snippet should have a clear title, brief description (1-2 sentences), content, and concepts covered:\n\n${chunk}`
+                  content: `${chunkHeader}Process this documentation markdown into substantial, comprehensive snippets. Create larger, more complete sections rather than tiny fragments. Remove unnecessary links, URLs, and navigation elements.\n\nFor each snippet, provide:\n- A clear, descriptive title\n- A brief summary (1-2 sentences)\n- Comprehensive content (combine related sections)\n- Key technical concepts covered\n\nFocus on creating useful, educational content:\n\n${chunk}`
                 }
               ],
               temperature: 0.2,
