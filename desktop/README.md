@@ -20,9 +20,9 @@ npm install
 ```
 
 2. Configure environment (optional):
-   - Copy `.env.example` to `.env` to customize ChromaDB connection:
+   - Copy `.env.EXAMPLE` to `.env` to customize ChromaDB connection:
    ```bash
-   cp .env.example .env
+   cp .env.EXAMPLE .env
    ```
    - Adjust `CHROMA_HOST` and `CHROMA_PORT` as needed
 

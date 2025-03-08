@@ -2,6 +2,10 @@
 # Startup script for Anchoring project
 # Works on macOS and Linux
 
+# Save the absolute path to the script directory at the very beginning
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "Script directory: ${SCRIPT_DIR}"
+
 # Function to check if a command exists
 command_exists() {
   command -v "$1" &> /dev/null
@@ -72,9 +76,8 @@ fi
 echo "Checking ChromaDB container..."
 if ! container_running "chroma-server"; then
   echo "Starting ChromaDB container..."
-  # Store the location of the script and the project root
-  PROJECT_ROOT="$(dirname "$0")"
-  cd "${PROJECT_ROOT}/mcp-server"
+  # Use the absolute script directory path saved at the beginning
+  cd "${SCRIPT_DIR}/mcp-server"
   
   # Check if docker-compose.yml exists, if not copy from example
   if [ ! -f "docker-compose.yml" ]; then
@@ -85,26 +88,51 @@ if ! container_running "chroma-server"; then
     read -r
   fi
   
-  docker-compose up -d
-  cd "${PROJECT_ROOT}"
+  docker-compose up -d --remove-orphans
+  cd "${SCRIPT_DIR}"
   echo "ChromaDB container started."
 else
   echo "ChromaDB container is already running."
 fi
 
+# Use the absolute paths based on the script directory saved at the beginning
+PROJECT_ROOT="${SCRIPT_DIR}"
+MCP_SERVER_DIR="${PROJECT_ROOT}/mcp-server"
+MCP_ENV_FILE="${MCP_SERVER_DIR}/.env"
+
+# Debug output
+echo "Project root: ${PROJECT_ROOT}"
+echo "MCP server directory: ${MCP_SERVER_DIR}"
+echo "MCP env file: ${MCP_ENV_FILE}"
+
+# Return to script directory to ensure consistent paths
+cd "${SCRIPT_DIR}"
+
 # Check for .env file in mcp-server
-if [ ! -f "mcp-server/.env" ]; then
-  echo "Creating .env file from example..."
-  cp mcp-server/.env.EXAMPLE mcp-server/.env
-  echo "Please edit mcp-server/.env to add your OpenAI API key."
+if [ ! -f "$MCP_ENV_FILE" ]; then
+  echo "Creating .env file at ${MCP_ENV_FILE}..."
+  
+  # Make sure we create the file in the right location
+  mkdir -p "${MCP_SERVER_DIR}"
+  
+  # Create .env file with required OpenAI API key for MCP server
+  cat > "${MCP_ENV_FILE}" << EOF
+PYTHONDONTWRITEBYTECODE=1
+PYTHONUNBUFFERED=1
+CHROMADB_HOST=localhost
+CHROMADB_PORT=8001
+OPENAI_API_KEY=your_openai_api_key_here
+MCP_SERVER_NAME="Version-Pinned Documentation Snippets"
+EOF
+  echo "Please edit ${MCP_ENV_FILE} to add your OpenAI API key (required for MCP server)."
   echo "Press Enter to continue after editing, or Ctrl+C to exit."
   read -r
 fi
 
 # Set up virtual environment for MCP server
 echo "Setting up Python virtual environment..."
-PROJECT_ROOT="$(dirname "$0")"
-cd "${PROJECT_ROOT}/mcp-server"
+cd "${MCP_SERVER_DIR}" || { echo "Error: Could not cd to ${MCP_SERVER_DIR}"; exit 1; }
+echo "Changed directory to: $(pwd)"
 
 # Create virtual environment using uv if it doesn't exist
 if [ ! -d ".venv" ]; then
@@ -145,8 +173,7 @@ fi
 
 # Deactivate the virtual environment
 deactivate
-PROJECT_ROOT="$(dirname "$0")"
-cd "${PROJECT_ROOT}"
+cd "${SCRIPT_DIR}"
 
 # Install desktop dependencies if needed
 echo "Installing desktop dependencies..."
@@ -162,10 +189,9 @@ echo "Application closed."
 
 # Clean up containers when the app closes
 echo "Cleaning up containers..."
-PROJECT_ROOT="$(dirname "$0")"
-if [ -f "$PROJECT_ROOT/mcp-server/docker-compose.yml" ]; then
-    cd "$PROJECT_ROOT/mcp-server"
-    docker-compose down
+if [ -f "$SCRIPT_DIR/mcp-server/docker-compose.yml" ]; then
+    cd "$SCRIPT_DIR/mcp-server"
+    docker-compose down --remove-orphans
 else
     echo "Warning: docker-compose.yml not found in mcp-server directory"
 fi
