@@ -313,3 +313,6 @@ sketch
 !mcp-server/MCP_README.md
 .chroma/*
 *.code-workspace
+
+# Personal
+plans/
