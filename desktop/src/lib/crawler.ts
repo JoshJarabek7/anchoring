@@ -302,12 +302,25 @@ function fallbackConvertHtmlToMarkdown(html: string): string {
 // Main crawler function
 export const crawlURL = async (url: string, config: CrawlerConfig): Promise<string[]> => {
   try {
-    // Add URL to database with pending status
-    await addURL({
-      session_id: config.sessionId,
-      url,
-      status: 'pending'
-    });
+    // Check if we already have this URL in the DB before processing
+    const existingUrl = await getURLByUrl(config.sessionId, url);
+    
+    // If URL already exists and is already processed, don't reprocess it
+    if (existingUrl && (existingUrl.status === 'crawled' || existingUrl.status === 'processed' || existingUrl.status === 'error')) {
+      console.log(`Skipping already processed URL: ${url} (status: ${existingUrl.status})`);
+      return [];
+    }
+    
+    // Add or update URL in database with pending status
+    if (existingUrl && existingUrl.id) {
+      await updateURLStatus(existingUrl.id, 'pending');
+    } else {
+      await addURL({
+        session_id: config.sessionId,
+        url,
+        status: 'pending'
+      });
+    }
     
     // Fetch HTML content
     const html = await fetchWithProxy(url);
@@ -327,6 +340,8 @@ export const crawlURL = async (url: string, config: CrawlerConfig): Promise<stri
     
     // Filter links based on crawler config
     const validLinks = links.filter(link => shouldCrawlURL(link, config));
+    
+    console.log(`Found ${links.length} links, ${validLinks.length} match criteria for URL: ${url}`);
     
     return validLinks;
   } catch (error) {
@@ -365,25 +380,27 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
   
   // Set up parallelism
   const DEFAULT_CONCURRENCY = 4; // Default to 4 parallel requests
-  const MAX_POSSIBLE_CONCURRENT = 16; // Hard limit for safety
+  const MAX_POSSIBLE_CONCURRENT = 1000; // Setting this to a very high number, effectively removing the limit
   
   // Determine concurrency based on config
   let concurrency = DEFAULT_CONCURRENCY;
   
   if (config.unlimitedParallelism) {
-    // Use a high number but not truly unlimited, for safety
-    concurrency = 32; 
+    // Use a truly high number for unlimited parallelism
+    concurrency = 1000; 
     console.log(`Crawler using unlimited parallelism (${concurrency} concurrent requests)`);
   } else if (config.maxConcurrentRequests) {
-    // Use specified concurrency, but cap at maximum
-    concurrency = Math.min(config.maxConcurrentRequests, MAX_POSSIBLE_CONCURRENT);
+    // Use specified concurrency without capping
+    concurrency = config.maxConcurrentRequests;
     console.log(`Crawler using ${concurrency} concurrent requests`);
   } else {
     console.log(`Crawler using default concurrency: ${concurrency} concurrent requests`);
   }
   
-  // Queue of URLs to crawl
-  const queue: string[] = [config.startUrl];
+  // Use a Set for queue to ensure URLs are unique
+  const queueSet = new Set<string>([config.startUrl]);
+  // Convert to array for easier manipulation
+  const queue: string[] = Array.from(queueSet);
   const visited = new Set<string>();
   const inProgress = new Set<string>();
   
@@ -401,19 +418,37 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
     // Import the module for getting URLs
     const { getURLs } = await import('./db');
     
-    // Get all URLs that already have status 'crawled' or 'error' or 'processed'
+    // Get all URLs from the database for this session
     const existingUrls = await getURLs(config.sessionId);
     
-    // Add them to the visited sets to avoid recrawling
+    // Use a Set for the queue to ensure uniqueness
+    const queueSet = new Set<string>();
+    if (!visited.has(config.startUrl) && !globalVisitedUrls.has(config.startUrl)) {
+      queueSet.add(config.startUrl);
+    }
+    
+    // Add them to the appropriate sets
+    let pendingCount = 0;
     for (const urlObj of existingUrls) {
+      // Add all URLs to the global visited set for tracking
+      globalVisitedUrls.add(urlObj.url);
+      
       if (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed') {
-        console.log(`Skipping already processed URL: ${urlObj.url}`);
+        // If already processed, just mark as visited and don't recrawl
+        console.log(`Skipping already processed URL: ${urlObj.url} (status: ${urlObj.status})`);
         visited.add(urlObj.url);
-        globalVisitedUrls.add(urlObj.url);
+      } else if (urlObj.status === 'pending' && urlObj.url !== config.startUrl) {
+        // If pending (and not the start URL), add to queue to process
+        console.log(`Adding pending URL to queue: ${urlObj.url}`);
+        queueSet.add(urlObj.url);
+        pendingCount++;
       }
     }
     
-    console.log(`Loaded ${visited.size} already processed URLs from database`);
+    // Convert the queueSet to an array for processing
+    const queue: string[] = Array.from(queueSet);
+    
+    console.log(`Loaded ${visited.size} processed and ${pendingCount} pending URLs from database`);
   } catch (error) {
     console.error("Error loading existing URLs:", error);
   }
@@ -435,6 +470,21 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
       if (visited.has(url) || inProgress.has(url) || globalVisitedUrls.has(url)) {
         console.log(`Skipping already visited/in-progress URL: ${url}`);
         continue;
+      }
+      
+      // Double-check URL in database to avoid race conditions
+      try {
+        const urlObj = await getURLByUrl(config.sessionId, url);
+        
+        // If URL exists and is already processed, mark as visited and skip
+        if (urlObj && (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed')) {
+          console.log(`Skipping already processed URL from DB check: ${url} (status: ${urlObj.status})`);
+          visited.add(url);
+          globalVisitedUrls.add(url);
+          continue;
+        }
+      } catch (err) {
+        console.error(`Error checking URL status in DB: ${url}`, err);
       }
       
       // Mark as in progress in both local and global state
@@ -465,7 +515,7 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
             // Add valid links to queue
             for (const link of newLinks) {
               // Skip if we already know about this URL
-              if (visited.has(link) || globalVisitedUrls.has(link)) {
+              if (visited.has(link) || inProgress.has(link) || globalVisitedUrls.has(link) || queue.includes(link)) {
                 console.log(`Skipping already known URL: ${link}`);
                 continue;
               }
@@ -474,29 +524,44 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
               try {
                 const urlObj = await getURLByUrl(config.sessionId, link);
                 
-                // If URL exists and is already processed, skip it
-                if (urlObj && (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed')) {
-                  console.log(`Skipping already processed URL from DB: ${link}`);
+                // If URL exists in any state, mark it as visited and don't add to queue again
+                if (urlObj) {
+                  console.log(`URL exists in DB with status ${urlObj.status}: ${link}`);
                   visited.add(link);
                   globalVisitedUrls.add(link);
+                  
+                  // Only add to queue if it's still pending
+                  if (urlObj.status === 'pending') {
+                    console.log(`Adding existing pending URL to queue: ${link}`);
+                    if (!queue.includes(link)) {
+                      queue.push(link);
+                    }
+                  } else {
+                    console.log(`Skipping URL with status ${urlObj.status}: ${link}`);
+                  }
                   continue;
                 }
               } catch (err) {
                 console.error(`Error checking URL status in DB: ${link}`, err);
               }
               
-              // Add to queue since it's not processed yet
-              queue.push(link);
+              // If we get here, URL is new and not in DB yet
+              console.log(`Adding new URL to queue: ${link}`);
               
-              // Add to database with pending status
-              try {
-                await addURL({
-                  session_id: config.sessionId,
-                  url: link,
-                  status: 'pending'
-                });
-              } catch (err) {
-                console.error(`Error adding URL to database: ${link}`, err);
+              // Check if it's in queue before adding
+              if (!queue.includes(link)) {
+                queue.push(link);
+                
+                // Add to database with pending status
+                try {
+                  await addURL({
+                    session_id: config.sessionId,
+                    url: link,
+                    status: 'pending'
+                  });
+                } catch (err) {
+                  console.error(`Error adding URL to database: ${link}`, err);
+                }
               }
             }
           }

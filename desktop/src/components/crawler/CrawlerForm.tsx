@@ -82,7 +82,7 @@ export default function CrawlerForm({
         prefix_path: prefixPath.trim(),
         anti_paths: antiPaths.trim(),
         anti_keywords: antiKeywords.trim(),
-        max_concurrent_requests: unlimitedParallelism ? 32 : maxConcurrentRequests,
+        max_concurrent_requests: unlimitedParallelism ? 1000 : maxConcurrentRequests,
         unlimited_parallelism: unlimitedParallelism,
       });
       
@@ -207,7 +207,6 @@ export default function CrawlerForm({
                       id="max_concurrent_requests"
                       type="number"
                       min={1}
-                      max={16}
                       value={maxConcurrentRequests}
                       onChange={(e) => {
                         const value = parseInt(e.target.value) || 4;
