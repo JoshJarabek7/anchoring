@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -13,9 +13,11 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, BookOpen, Code, Library, Info } from "lucide-react";
+import { ChromaClient } from "@/lib/chroma-client";
+import { DocumentationCategory } from "@/lib/db";
+import { getUserSettings } from "@/lib/db";
 
 interface DocSnippet {
   id: string;
@@ -37,21 +39,97 @@ interface KnowledgeBaseProps {
   apiKey: string;
 }
 
-export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
+export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [activeTab, setActiveTab] = useState<"vectorSearch" | "docsLibrary">("vectorSearch");
   
+  // State to store the effective API key
+  const [effectiveApiKey, setEffectiveApiKey] = useState<string>(propApiKey || "");
+  
   // For the docs library
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [selectedComponent, setSelectedComponent] = useState<string | undefined>();
   const [selectedVersion, setSelectedVersion] = useState<string | undefined>();
-  const [availableComponents, setAvailableComponents] = useState<{name: string, version?: string}[]>([]);
+  const [availableComponents, setAvailableComponents] = useState<{name: string, version: string}[]>([]);
+  const [availableVersions, setAvailableVersions] = useState<string[]>([]);
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
   const [docSearchQuery, setDocSearchQuery] = useState("");
   const [docSearchResults, setDocSearchResults] = useState<SearchResult[]>([]);
   const [isDocSearching, setIsDocSearching] = useState(false);
+  const [docPage, setDocPage] = useState(1);
+  const [hasMoreDocs, setHasMoreDocs] = useState(false);
+  const [loadingMoreDocs, setLoadingMoreDocs] = useState(false);
+  const docsPerPage = 20; // Number of docs to load per page
+  
+  // Load API key from multiple sources if needed
+  useEffect(() => {
+    const loadApiKey = async () => {
+      // Start with the prop API key
+      let key = propApiKey;
+      
+      // If no key from props, try to get it from the database
+      if (!key || key.trim() === "") {
+        try {
+          console.log("No API key provided via props, trying to load from database...");
+          const settings = await getUserSettings();
+          if (settings?.openai_key) {
+            console.log(`Found API key in database (length: ${settings.openai_key.length})`);
+            key = settings.openai_key;
+          }
+        } catch (error) {
+          console.error("Error loading API key from database:", error);
+        }
+      }
+      
+      // Check if we have a key from any source
+      if (key && key.trim() !== "") {
+        console.log(`Using API key (length: ${key.length})`);
+        setEffectiveApiKey(key);
+      } else {
+        console.error("No API key available from any source!");
+        toast.error("No OpenAI API key available. Please set it in the settings.");
+      }
+    };
+    
+    loadApiKey();
+  }, [propApiKey]);
+  
+  // Debug effect - runs once when the component loads
+  useEffect(() => {
+    const runDebugDiagnostics = async () => {
+      if (!effectiveApiKey) {
+        console.log("No API key available for debugging");
+        return;
+      }
+      
+      try {
+        console.log("Running diagnostic ChromaDB check...");
+        const chromaClient = new ChromaClient(effectiveApiKey);
+        await chromaClient.initialize();
+        
+        // Run our debug inspection
+        await chromaClient.debugInspectCollection(20);
+        
+        // Try getting components for each category
+        console.log("Trying to get language components...");
+        await chromaClient.getAvailableComponents(DocumentationCategory.LANGUAGE);
+        
+        console.log("Trying to get framework components...");
+        await chromaClient.getAvailableComponents(DocumentationCategory.FRAMEWORK);
+        
+        console.log("Trying to get library components...");
+        await chromaClient.getAvailableComponents(DocumentationCategory.LIBRARY);
+      } catch (err) {
+        console.error("Error during diagnostics:", err);
+      }
+    };
+    
+    if (effectiveApiKey) {
+      runDebugDiagnostics();
+    }
+  }, [effectiveApiKey]);
 
   // Vector search
   const handleVectorSearch = async () => {
@@ -60,15 +138,29 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
       return;
     }
     
+    if (!effectiveApiKey) {
+      toast.error("OpenAI API key is required for search");
+      return;
+    }
+    
     setIsSearching(true);
     setSearchResults([]);
     
     try {
+      console.log(`Starting vector search with API key (length: ${effectiveApiKey.length})`);
+      
       // Import the search function
       const { vectorSearch } = await import("@/lib/knowledge");
       
       // Search across all content (not filtered by session)
-      const results = await vectorSearch(searchQuery);
+      const results = await vectorSearch(searchQuery, effectiveApiKey);
+      
+      // Log the scores to debug
+      if (results.length > 0) {
+        console.log("Search results received with scores:", 
+          results.map(r => ({ id: r.id, score: r.score })));
+      }
+      
       setSearchResults(results);
       
       if (results.length === 0) {
@@ -76,43 +168,104 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
       }
     } catch (error) {
       console.error("Error during vector search:", error);
-      toast.error("An error occurred during search. Check console for details.");
+      toast.error(`Search failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsSearching(false);
     }
   };
 
+  // Effect to update available versions when component changes
+  useEffect(() => {
+    if (selectedComponent) {
+      // Find versions for the selected component
+      const component = availableComponents.find(c => c.name === selectedComponent);
+      if (component?.version) {
+        setAvailableVersions([component.version]);
+        setSelectedVersion(component.version);
+      } else {
+        setAvailableVersions([]);
+        setSelectedVersion(undefined);
+      }
+    } else {
+      setAvailableVersions([]);
+      setSelectedVersion(undefined);
+    }
+  }, [selectedComponent, availableComponents]);
+
   // Doc snippets search
-  const handleDocSearch = async () => {
-    if (!docSearchQuery.trim() && !selectedComponent) {
+  const handleDocSearch = async (loadMore: boolean = false) => {
+    if (!loadMore && !docSearchQuery.trim() && !selectedComponent) {
       toast.error("Please enter a search query or select a component");
       return;
     }
     
-    setIsDocSearching(true);
-    setDocSearchResults([]);
+    if (selectedComponent && !selectedVersion) {
+      toast.error("Please select a version for the selected component");
+      return;
+    }
+    
+    if (!effectiveApiKey) {
+      toast.error("OpenAI API key is required for search");
+      return;
+    }
+    
+    if (loadMore) {
+      setLoadingMoreDocs(true);
+    } else {
+      setIsDocSearching(true);
+      setDocSearchResults([]);
+      setDocPage(1);
+    }
     
     try {
+      console.log(`${loadMore ? "Loading more docs" : "Starting doc search"} with API key (length: ${effectiveApiKey.length})`);
+      
       // Import the doc search function
       const { searchDocSnippets } = await import("@/lib/knowledge");
+      
+      const currentPage = loadMore ? docPage + 1 : 1;
+      const limit = docsPerPage;
       
       const results = await searchDocSnippets({
         query: docSearchQuery,
         category: selectedCategory as "language" | "framework" | "library" | undefined,
         componentName: selectedComponent,
-        componentVersion: selectedVersion
+        componentVersion: selectedVersion,
+        apiKey: effectiveApiKey,
+        limit,
+        page: currentPage
       });
       
-      setDocSearchResults(results);
+      if (loadMore) {
+        // Append results to existing ones
+        setDocSearchResults(prev => [...prev, ...results]);
+      } else {
+        setDocSearchResults(results);
+      }
       
-      if (results.length === 0) {
+      // Update pagination state
+      setDocPage(currentPage);
+      
+      // Always assume there might be more results unless we get fewer than the limit
+      setHasMoreDocs(results.length >= limit);
+      
+      if (results.length === 0 && !loadMore) {
         toast.info("No documentation snippets found. Try a different query or selection.");
+      } else if (results.length === 0 && loadMore) {
+        toast.info("No more documentation snippets to load.");
+        setHasMoreDocs(false);
+      } else {
+        console.log(`Retrieved ${results.length} snippets, page ${currentPage}. Total shown: ${(loadMore ? docSearchResults.length + results.length : results.length)}`);
       }
     } catch (error) {
       console.error("Error searching documentation snippets:", error);
-      toast.error("Failed to search documentation snippets");
+      toast.error(`Search failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
-      setIsDocSearching(false);
+      if (loadMore) {
+        setLoadingMoreDocs(false);
+      } else {
+        setIsDocSearching(false);
+      }
     }
   };
 
@@ -131,7 +284,7 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
         // Import the list components function
         const { listDocComponents } = await import("@/lib/knowledge");
         
-        const components = await listDocComponents(selectedCategory as "language" | "framework" | "library");
+        const components = await listDocComponents(selectedCategory as "language" | "framework" | "library", effectiveApiKey);
         setAvailableComponents(components);
         
         // Reset selections
@@ -147,10 +300,10 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
     };
     
     loadComponents();
-  }, [selectedCategory]);
+  }, [selectedCategory, effectiveApiKey]);
 
   // Check if we have the API key
-  if (!apiKey) {
+  if (!effectiveApiKey) {
     return (
       <Card className="border shadow-sm">
         <CardHeader className="pb-3">
@@ -241,7 +394,9 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
                             <div className="flex justify-between items-start gap-2">
                               <CardTitle className="text-base font-medium">{result.snippet.title}</CardTitle>
                               <Badge variant="outline" className="shrink-0">
-                                {(result.score * 100).toFixed(1)}%
+                                {typeof result.score === 'number' ? 
+                                  `${(result.score * 100).toFixed(1)}%` : 
+                                  'Score N/A'}
                               </Badge>
                             </div>
                             <CardDescription className="flex items-center text-xs mt-1">
@@ -255,7 +410,7 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
                             </CardDescription>
                           </CardHeader>
                           <CardContent className="p-4 pt-2">
-                            <pre className="text-sm bg-muted/50 p-3 rounded-md overflow-auto max-h-[300px] border">
+                            <pre className="text-sm bg-muted/50 p-3 rounded-md overflow-x-auto border whitespace-pre-wrap break-all">
                               {result.snippet.content}
                             </pre>
                           </CardContent>
@@ -321,12 +476,34 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
                       <SelectContent>
                         {availableComponents.map((component) => (
                           <SelectItem key={component.name} value={component.name}>
-                            {component.name} {component.version ? `(${component.version})` : ""}
+                            {component.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
+                  
+                  {selectedComponent && availableVersions.length > 0 && (
+                    <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                      <Select 
+                        value={selectedVersion} 
+                        onValueChange={setSelectedVersion}
+                        disabled={availableVersions.length === 0}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select version" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableVersions.map((version) => (
+                            <SelectItem key={version} value={version}>
+                              {version}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex gap-2">
@@ -343,11 +520,17 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
                     />
                   </div>
                   <Button 
-                    onClick={handleDocSearch}
-                    disabled={isDocSearching || (!docSearchQuery.trim() && !selectedComponent)}
+                    onClick={() => handleDocSearch(true)}
+                    disabled={
+                      isDocSearching || 
+                      // Enable if we have a component selected, even without a query
+                      (!docSearchQuery.trim() && !selectedComponent) ||
+                      // But require a version if component is selected
+                      (!!selectedComponent && !selectedVersion)
+                    }
                     className="shrink-0"
                   >
-                    {isDocSearching ? "Searching..." : "Search"}
+                    {isDocSearching ? "Searching..." : (docSearchQuery.trim() ? "Search" : "Browse Docs")}
                   </Button>
                 </div>
               </div>
@@ -366,7 +549,9 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
                                   {result.snippet.name} {result.snippet.version || ""}
                                 </Badge>
                                 <Badge variant="outline" className="shrink-0">
-                                  {(result.score * 100).toFixed(1)}%
+                                  {typeof result.score === 'number' ? 
+                                    `${(result.score * 100).toFixed(1)}%` : 
+                                    'Score N/A'}
                                 </Badge>
                               </div>
                             </div>
@@ -376,12 +561,33 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
                             </CardDescription>
                           </CardHeader>
                           <CardContent className="p-4 pt-2">
-                            <pre className="text-sm bg-muted/50 p-3 rounded-md overflow-auto max-h-[300px] border">
+                            <pre className="text-sm bg-muted/50 p-3 rounded-md overflow-x-auto border whitespace-pre-wrap break-all">
                               {result.snippet.content}
                             </pre>
                           </CardContent>
                         </Card>
                       ))}
+                      
+                      {/* Load More Button */}
+                      {hasMoreDocs && (
+                        <div className="flex justify-center mt-4">
+                          <Button
+                            variant="outline"
+                            onClick={() => handleDocSearch(true)}
+                            disabled={loadingMoreDocs}
+                            className="w-full max-w-[300px]"
+                          >
+                            {loadingMoreDocs ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
+                                Loading...
+                              </>
+                            ) : (
+                              "Load More Documents"
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </ScrollArea>
                 ) : isDocSearching ? (

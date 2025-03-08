@@ -1,4 +1,4 @@
-import { addURL, updateURLContent, updateURLStatus, getURLByUrl, getNextProxy, getProxies } from './db';
+import { addURL, updateURLContent, updateURLStatus, getURLByUrl, getProxies } from './db';
 import TurndownService from 'turndown';
 
 // Global state to track if crawling is in progress
@@ -14,14 +14,35 @@ const activeProxies = new Set<string>();
 
 // Function to stop any active crawling
 export const stopCrawling = (): void => {
+  console.log("Stopping all crawling activities");
   crawlingStopped = true;
+  isCrawling = false;
+  activeCrawlUrls = [];
   console.log("Crawling has been stopped. Current urls being processed will finish.");
+};
+
+// Function to reset crawler state after stopping
+export const resetCrawlerState = (): void => {
+  console.log("Resetting crawler state");
+  crawlingStopped = false;
+  isCrawling = false;
+  activeCrawlUrls = [];
+  globalVisitedUrls.clear();
 };
 
 // Function to check if crawling is in progress
 export const getCrawlingStatus = (): { isCrawling: boolean, activeCrawlUrls: string[] } => {
+  // Only report as crawling if we have active URLs or the flag is explicitly set
+  const actuallyIsCrawling = isCrawling && (activeCrawlUrls.length > 0 || crawlingStopped);
+  
+  // If we're not actually crawling but the flag says we are, reset it
+  if (!actuallyIsCrawling && isCrawling) {
+    console.log("No active URLs but crawling flag was set. Resetting crawler state.");
+    isCrawling = false;
+  }
+  
   return { 
-    isCrawling, 
+    isCrawling: actuallyIsCrawling, 
     activeCrawlUrls: [...activeCrawlUrls] 
   };
 };
@@ -320,6 +341,12 @@ export const crawlURL = async (url: string, config: CrawlerConfig): Promise<stri
 
 // Function to start the crawler with a given configuration
 export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
+  // Check if crawling was stopped - don't restart if requested to stop
+  if (crawlingStopped) {
+    console.log("Crawling was previously stopped. Not starting new crawler. Reset required.");
+    return;
+  }
+  
   // Set crawling state
   isCrawling = true;
   crawlingStopped = false;
@@ -367,16 +394,48 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
     status: 'pending'
   });
   
+  // First check the DB for any URLs that are already crawled
+  // to avoid recrawling them
+  console.log("Loading already crawled URLs from database...");
+  try {
+    // Import the module for getting URLs
+    const { getURLs } = await import('./db');
+    
+    // Get all URLs that already have status 'crawled' or 'error' or 'processed'
+    const existingUrls = await getURLs(config.sessionId);
+    
+    // Add them to the visited sets to avoid recrawling
+    for (const urlObj of existingUrls) {
+      if (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed') {
+        console.log(`Skipping already processed URL: ${urlObj.url}`);
+        visited.add(urlObj.url);
+        globalVisitedUrls.add(urlObj.url);
+      }
+    }
+    
+    console.log(`Loaded ${visited.size} already processed URLs from database`);
+  } catch (error) {
+    console.error("Error loading existing URLs:", error);
+  }
+  
   console.log(`Starting crawler with concurrency of ${concurrency}`);
   
   // Process queue with parallelism
   while ((queue.length > 0 || inProgress.size > 0) && !crawlingStopped) {
+    // Log crawler status periodically
+    if (queue.length > 0 || inProgress.size > 0) {
+      console.log(`Crawler status: ${inProgress.size} in progress, ${queue.length} queued, ${visited.size} visited`);
+    }
+    
     // Fill the processing queue up to concurrency limit
     while (inProgress.size < concurrency && queue.length > 0 && !crawlingStopped) {
       const url = queue.shift()!;
       
       // Skip if already visited or in progress - check both local and global state
-      if (visited.has(url) || inProgress.has(url) || globalVisitedUrls.has(url)) continue;
+      if (visited.has(url) || inProgress.has(url) || globalVisitedUrls.has(url)) {
+        console.log(`Skipping already visited/in-progress URL: ${url}`);
+        continue;
+      }
       
       // Mark as in progress in both local and global state
       inProgress.add(url);
@@ -388,47 +447,77 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
         try {
           // Add to active crawl URLs
           activeCrawlUrls.push(currentUrl);
-          console.log(`Crawling [${inProgress.size}/${concurrency}]: ${currentUrl}`);
           
-          // Crawl URL and get discovered links
-          const discoveredLinks = await crawlURL(currentUrl, config);
+          // Check if we should stop crawling
+          if (crawlingStopped) {
+            console.log(`Skipping crawl of ${currentUrl} due to stop request`);
+            inProgress.delete(currentUrl);
+            const urlIndex = activeCrawlUrls.indexOf(currentUrl);
+            if (urlIndex !== -1) activeCrawlUrls.splice(urlIndex, 1);
+            return;
+          }
           
-          // Add new links to queue - use faster Set lookups instead of queue.includes
-          for (const link of discoveredLinks) {
-            if (!visited.has(link) && !inProgress.has(link) && !globalVisitedUrls.has(link)) {
+          console.log(`Crawling ${currentUrl}`);
+          const newLinks = await crawlURL(currentUrl, config);
+          
+          // If crawling has been stopped, don't enqueue new links
+          if (!crawlingStopped) {
+            // Add valid links to queue
+            for (const link of newLinks) {
+              // Skip if we already know about this URL
+              if (visited.has(link) || globalVisitedUrls.has(link)) {
+                console.log(`Skipping already known URL: ${link}`);
+                continue;
+              }
+              
+              // Check if URL exists in database before adding
+              try {
+                const urlObj = await getURLByUrl(config.sessionId, link);
+                
+                // If URL exists and is already processed, skip it
+                if (urlObj && (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed')) {
+                  console.log(`Skipping already processed URL from DB: ${link}`);
+                  visited.add(link);
+                  globalVisitedUrls.add(link);
+                  continue;
+                }
+              } catch (err) {
+                console.error(`Error checking URL status in DB: ${link}`, err);
+              }
+              
+              // Add to queue since it's not processed yet
               queue.push(link);
-              globalVisitedUrls.add(link); // Add to global set to prevent other crawlers from duplicating
               
               // Add to database with pending status
-              await addURL({
-                session_id: config.sessionId,
-                url: link,
-                status: 'pending'
-              });
+              try {
+                await addURL({
+                  session_id: config.sessionId,
+                  url: link,
+                  status: 'pending'
+                });
+              } catch (err) {
+                console.error(`Error adding URL to database: ${link}`, err);
+              }
             }
           }
-          
         } catch (error) {
           console.error(`Error processing ${currentUrl}:`, error);
-          const urlObj = await getURLByUrl(config.sessionId, currentUrl);
-          if (urlObj && urlObj.id) {
-            await updateURLStatus(urlObj.id, 'error');
-          }
         } finally {
-          // Clean up tracking regardless of success/failure
+          // Always remove from in-progress list
           inProgress.delete(currentUrl);
-          activeCrawlUrls = activeCrawlUrls.filter(u => u !== currentUrl);
+          
+          // Remove from active crawl URLs
+          const urlIndex = activeCrawlUrls.indexOf(currentUrl);
+          if (urlIndex !== -1) activeCrawlUrls.splice(urlIndex, 1);
         }
       })(url);
     }
     
-    // If we've hit our concurrency limit, wait a bit before checking again
-    if (inProgress.size >= concurrency || (queue.length === 0 && inProgress.size > 0)) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    // Check if the crawler has been stopped before waiting
+    if (crawlingStopped) break;
     
-    // Log status periodically
-    console.log(`Crawler status: ${inProgress.size} in progress, ${queue.length} queued, ${visited.size} visited`);
+    // Wait a bit before checking the queue again
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
   
   // Reset crawling state

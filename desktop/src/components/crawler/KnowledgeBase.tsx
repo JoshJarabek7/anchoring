@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useKnowledgeBase, KnowledgeBaseFilters } from '@/hooks/useKnowledgeBase';
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,10 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import DocumentationSnippetCard from './DocumentationSnippet';
-import { Search, FilterX, ExternalLink } from 'lucide-react';
-import { toast } from '@/components/ui/sonner';
+import { Search, FilterX } from 'lucide-react';
+import { toast } from 'sonner';
 import { DocumentationCategory } from '@/lib/db';
 
 interface KnowledgeBaseProps {
@@ -19,7 +18,6 @@ interface KnowledgeBaseProps {
 
 export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
   const [searchInput, setSearchInput] = useState('');
-  const [openSourceUrl, setOpenSourceUrl] = useState<string | null>(null);
   const {
     searchQuery,
     searchResults,
@@ -28,9 +26,7 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
     error,
     availableComponents,
     searchSnippets,
-    updateFilters,
-    clearSearch,
-    loadAvailableComponents
+    updateFilters
   } = useKnowledgeBase(apiKey);
 
   // Execute search on enter key or submit
@@ -66,7 +62,6 @@ export default function KnowledgeBase({ apiKey }: KnowledgeBaseProps) {
     if (!url) return;
     
     // For Tauri app, we'll use the window.open or an API to open external links
-    setOpenSourceUrl(url);
     window.open(url, '_blank');
   };
 

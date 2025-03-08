@@ -147,7 +147,7 @@ export async function processMarkdownIntoSnippets(
                 content: snippet.content,
                 concepts: snippet.concepts || []
               };
-            }).filter((snippet): snippet is FullDocumentationSnippet => snippet !== null);
+            }).filter((snippet): snippet is any => snippet !== null);
             
             const chunkEndTime = performance.now();
             console.log(`✅ Processed chunk ${chunkIndex+1}/${chunks.length} in ${((chunkEndTime - chunkStartTime) / 1000).toFixed(2)}s`);

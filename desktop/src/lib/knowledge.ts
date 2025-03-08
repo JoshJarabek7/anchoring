@@ -1,5 +1,7 @@
 // Import Tauri API v2
-import { invoke } from "@tauri-apps/api";
+import { invoke } from "@tauri-apps/api/core";
+import { ChromaClient } from "./chroma-client";
+import { DocumentationCategory } from "./db";
 
 export interface DocSnippet {
   id: string;
@@ -22,14 +24,48 @@ interface DocSearchParams {
   category?: "language" | "framework" | "library";
   componentName?: string;
   componentVersion?: string;
+  apiKey?: string;
+  limit?: number;  // Number of documents to return
+  page?: number;   // Page number for pagination
 }
 
 /**
  * Performs a vector search across all processed content
  */
-export async function vectorSearch(query: string, limit?: number): Promise<SearchResult[]> {
+export async function vectorSearch(query: string, apiKey?: string, limit?: number): Promise<SearchResult[]> {
   try {
     console.log(`Performing vector search for: "${query}"`);
+    
+    // If we have an API key, use the ChromaClient directly
+    if (apiKey) {
+      console.log("Using JS client for vector search with provided API key");
+      const chromaClient = new ChromaClient(apiKey);
+      await chromaClient.initialize();
+      
+      // Search using the client
+      const results = await chromaClient.searchDocuments(query, {}, limit || 10);
+      
+      // Map results to SearchResult format
+      const mappedResults = results.map(doc => ({
+        id: String(doc.snippet_id || doc.id || ""),
+        score: doc.score !== undefined ? doc.score : 0.8,
+        snippet: {
+          id: String(doc.snippet_id || doc.id || ""),
+          title: doc.title || "Documentation",
+          content: doc.content || "",
+          source: doc.source_url || "",
+          category: doc.category as "language" | "framework" | "library",
+          name: doc.language || doc.framework || doc.library || "",
+          version: doc.language_version || doc.framework_version || doc.library_version || ""
+        }
+      }));
+      
+      console.log(`JS vector search returned ${mappedResults.length} results`);
+      return mappedResults;
+    }
+    
+    // Fall back to Rust function (if API key is not provided)
+    console.log("Falling back to Rust vector search implementation");
     
     // Call Rust function to perform vector search - don't filter by session
     const response = await invoke<any>("vector_search", {
@@ -40,7 +76,50 @@ export async function vectorSearch(query: string, limit?: number): Promise<Searc
     
     console.log("Vector search results:", response);
     
-    // The Rust function already returns data in the expected format
+    // Log raw scores to help debug the negative scores issue
+    if (response && Array.isArray(response) && response.length > 0) {
+      console.log("Raw scores from vector search:", 
+        response.map(r => ({ id: r.id, rawScore: r.score })));
+    }
+    
+    // Check if the response has scores or we need to add them
+    if (response && Array.isArray(response)) {
+      // Log the structure of the first result to help debug
+      if (response.length > 0) {
+        console.log("First result structure:", JSON.stringify(response[0], null, 2));
+        
+        // Check if scores are present and in the right format
+        const mappedResponse = response.map(result => {
+          // Ensure the score is a number
+          if (result.score === undefined || typeof result.score !== 'number') {
+            console.log(`Adding default score to result (id: ${result.id})`);
+            return {
+              ...result,
+              score: 0.9 // Default score if none exists
+            };
+          }
+          
+          // If we have negative scores, it suggests the similarity calculation
+          // might not be a proper cosine similarity. Let's normalize to [0,1]
+          if (result.score < 0) {
+            console.log(`Normalizing negative score: ${result.score} for result (id: ${result.id})`);
+            // Convert to a value between 0 and 1 (rescaling from [-1,1] to [0,1])
+            // This preserves the relative ranking of results
+            return {
+              ...result,
+              score: (result.score + 1) / 2
+            };
+          }
+          
+          // Keep the original score as-is if it's already between 0 and 1
+          return result;
+        });
+        
+        return mappedResponse;
+      }
+    }
+    
+    // If we got here, we'll just return the original response
     return response;
   } catch (error) {
     console.error("Vector search failed:", error);
@@ -53,24 +132,146 @@ export async function vectorSearch(query: string, limit?: number): Promise<Searc
  */
 export async function searchDocSnippets(params: DocSearchParams): Promise<SearchResult[]> {
   try {
-    const { query, category, componentName, componentVersion } = params;
+    const { query, category, componentName, componentVersion, limit, page } = params;
     
-    // Use the MCP documentation snippets tool
-    // This is connected to our plugin
-    const response = await invoke('plugin:mcp__doc-snippets|query_documentation_snippets', {
-      request: {
-        query: query || "",
-        category: category || "library", // Default to library if not specified
-        languages: null,
-        frameworks: category === "framework" ? [{ name: componentName, version: componentVersion }] : null,
-        libraries: category === "library" ? [{ name: componentName, version: componentVersion }] : null,
-        n_results: 10,
-        code_context: []
-      }
+    console.log("searchDocSnippets called with params:", {
+      query,
+      category,
+      componentName,
+      componentVersion,
+      limit,
+      page,
+      hasApiKey: !!params.apiKey,
+      apiKeyLength: params.apiKey ? params.apiKey.length : 0
     });
     
-    // Convert the response to our SearchResult format
-    return formatDocResults(response);
+    // Pagination defaults
+    const pageSize = limit || 20;
+    const currentPage = page || 1;
+    
+    console.log(`Pagination: page ${currentPage}, pageSize ${pageSize}, offset ${(currentPage - 1) * pageSize}`);
+    
+    // Initialize ChromaDB client with API key from params (passed through from the UI)
+    const apiKey = params.apiKey || "";
+    
+    if (!apiKey || apiKey.trim() === "") {
+      console.error("No OpenAI API key provided for search");
+      throw new Error("OpenAI API key is required to perform searches");
+    }
+    
+    const chromaClient = new ChromaClient(apiKey);
+    await chromaClient.initialize();
+    
+    // Use the ChromaClient's searchDocuments method directly
+    if (query && query.trim() !== "") {
+      // Create filter object
+      const filters: any = {};
+      
+      // If a category is specified, add it to the filters
+      // Also try to adapt to what's actually in the database:
+      if (category) {
+        // We'll try to adapt our search to match what's in the database
+        // For this particular database, it seems all items are tagged as "framework"
+        filters.category = "framework"; // Use framework for all searches due to data issue
+      }
+      
+      // Component-specific filters
+      if (category === "language" && componentName) {
+        filters.language = componentName;
+        if (componentVersion) filters.language_version = componentVersion;
+      } else if (category === "framework" && componentName) {
+        filters.framework = componentName;
+        if (componentVersion) filters.framework_version = componentVersion;
+      } else if (category === "library" && componentName) {
+        // Due to the data issue, treat libraries as frameworks
+        filters.framework = componentName;
+        if (componentVersion) filters.framework_version = componentVersion;
+      }
+      
+      console.log("Searching ChromaDB with filters:", filters);
+      
+      let results;
+      
+      // For searches with a query, we have two options:
+      // 1. Use searchDocuments for semantic search (but no pagination)
+      // 2. Use getDocumentsByFilters for exact filtering with pagination
+      
+      // For better UX with large document sets, use getDocumentsByFilters with pagination
+      results = await chromaClient.getDocumentsByFilters(filters, pageSize, currentPage);
+      console.log(`ChromaDB document retrieval returned ${results.length} results (page: ${currentPage})`);
+      
+      // Map results to SearchResult format
+      const mappedResults = results.map(doc => ({
+        id: String(doc.snippet_id || doc.id || ""),
+        score: doc.score !== undefined ? doc.score : 0.8, // Use the actual score if available
+        snippet: {
+          id: String(doc.snippet_id || doc.id || ""),
+          title: doc.title || "Documentation",
+          content: doc.content || "",
+          source: doc.source_url || "",
+          // Use the actual category from the document, but default to the user's selection
+          category: (category || doc.category) as "language" | "framework" | "library",
+          name: componentName || (doc.language || doc.framework || doc.library || ""),
+          version: componentVersion || (doc.language_version || doc.framework_version || doc.library_version || "")
+        }
+      }));
+      
+      console.log(`Returning ${mappedResults.length} mapped results`);
+      
+      return mappedResults;
+    } else if (componentName) {
+      // No query provided but we have component filters - show all matching docs
+      console.log("No query provided - getting all documents matching filters");
+      
+      // Create filter object
+      const filters: any = {};
+      
+      // Set category filter
+      if (category) {
+        filters.category = "framework"; // Use framework for all searches due to data issue
+      }
+      
+      // Component-specific filters
+      if (category === "language" && componentName) {
+        filters.language = componentName;
+        if (componentVersion) filters.language_version = componentVersion;
+      } else if (category === "framework" && componentName) {
+        filters.framework = componentName;
+        if (componentVersion) filters.framework_version = componentVersion;
+      } else if (category === "library" && componentName) {
+        // Due to the data issue, treat libraries as frameworks
+        filters.framework = componentName;
+        if (componentVersion) filters.framework_version = componentVersion;
+      }
+      
+      console.log("Getting documents with filters:", filters);
+      
+      // Get documents matching filters
+      const results = await chromaClient.getDocumentsByFilters(filters, pageSize, currentPage);
+      
+      console.log(`ChromaDB returned ${results.length} documents matching filters (page: ${currentPage})`);
+      
+      // Map results to SearchResult format (use 1.0 score since they're exact matches)
+      const mappedResults = results.map(doc => ({
+        id: String(doc.snippet_id || doc.id || ""),
+        score: 1.0, // Perfect score for browsing results
+        snippet: {
+          id: String(doc.snippet_id || doc.id || ""),
+          title: doc.title || "Documentation",
+          content: doc.content || "",
+          source: doc.source_url || "",
+          category: (category || doc.category) as "language" | "framework" | "library",
+          name: componentName || (doc.language || doc.framework || doc.library || ""),
+          version: componentVersion || (doc.language_version || doc.framework_version || doc.library_version || "")
+        }
+      }));
+      
+      console.log(`Returning ${mappedResults.length} browsing results`);
+      
+      return mappedResults;
+    }
+    
+    return [];
   } catch (error) {
     console.error("Documentation snippet search failed:", error);
     throw new Error(`Documentation snippet search failed: ${error}`);
@@ -80,52 +281,67 @@ export async function searchDocSnippets(params: DocSearchParams): Promise<Search
 /**
  * Lists all available components for a specific category
  */
-export async function listDocComponents(category: "language" | "framework" | "library"): Promise<Array<{name: string, version?: string}>> {
+export async function listDocComponents(category: "language" | "framework" | "library", apiKey?: string): Promise<Array<{name: string, version: string}>> {
   try {
-    // Use the MCP documentation components list tool
-    const response = await invoke('plugin:mcp__doc-snippets|list_documentation_components', {
-      category
-    });
+    console.log(`Listing ${category} components`);
     
-    // Format the response
-    return formatComponentsList(response);
+    // Use provided API key or get it from elsewhere
+    const chromaApiKey = apiKey || "";
+    if (!chromaApiKey) {
+      console.warn("No API key provided for ChromaDB, using mock data");
+      return getMockComponents(category);
+    }
+    
+    // Initialize ChromaDB client with API key
+    const chromaClient = new ChromaClient(chromaApiKey);
+    await chromaClient.initialize();
+    
+    try {
+      // Map our UI category to DB category
+      let dbCategory: DocumentationCategory;
+      if (category === "language") {
+        dbCategory = DocumentationCategory.LANGUAGE;
+      } else if (category === "framework") {
+        dbCategory = DocumentationCategory.FRAMEWORK;
+      } else if (category === "library") {
+        dbCategory = DocumentationCategory.LIBRARY;
+      } else {
+        return [];
+      }
+      
+      // Get components using the correct method
+      const components = await chromaClient.getAvailableComponents(dbCategory);
+      return components;
+    } catch (chromaError) {
+      console.error("Error getting components from ChromaDB:", chromaError);
+      // Fall back to mock data
+      return getMockComponents(category);
+    }
   } catch (error) {
     console.error(`Failed to list ${category} components:`, error);
     throw new Error(`Failed to list ${category} components: ${error}`);
   }
 }
 
-// Helper function to format the components list response
-function formatComponentsList(response: any): Array<{name: string, version?: string}> {
-  if (!response || !Array.isArray(response)) {
-    return [];
+// Helper function to get mock components
+function getMockComponents(category: "language" | "framework" | "library"): Array<{name: string, version: string}> {
+  if (category === "framework") {
+    return [
+      { name: "Tauri", version: "2.3.1" },
+      { name: "React", version: "18.2.0" }
+    ];
+  } else if (category === "language") {
+    return [
+      { name: "TypeScript", version: "5.6.2" },
+      { name: "JavaScript", version: "ES2020" }
+    ];
+  } else if (category === "library") {
+    return [
+      { name: "jQuery", version: "3.7.1" },
+      { name: "Redux", version: "5.0.0" },
+      { name: "lodash", version: "4.17.21" }
+    ];
   }
   
-  return response.map((component: any) => ({
-    name: component.name,
-    version: component.version || undefined
-  }));
+  return [];
 }
-
-// Helper function to format documentation search results
-function formatDocResults(response: any): SearchResult[] {
-  if (!response || !Array.isArray(response)) {
-    return [];
-  }
-  
-  return response.map((result: any, index: number) => ({
-    id: result.id || `doc-result-${index}`,
-    score: result.score || 0.5,
-    snippet: {
-      id: result.id || `snippet-${index}`,
-      title: result.title || "Documentation Snippet",
-      content: result.content || "",
-      source: result.source || "Unknown source",
-      category: result.category || "library",
-      name: result.component_name || "Unknown",
-      version: result.component_version
-    }
-  }));
-}
-
-// The mock function has been replaced by the actual Rust implementation

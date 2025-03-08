@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 // Import fs plugin dynamically to prevent CORS issues during development
 // import { exists } from "@tauri-apps/plugin-fs";
 
@@ -10,6 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { getUserSettings } from "./lib/db";
+import { BookmarkIcon, StopCircle } from "lucide-react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Import pages
 import SessionsPage from "./components/sessions/SessionsPage";
@@ -188,21 +190,24 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
       setCrawling(true);
       toast.info(`Starting crawler for ${selectedUrls.length} URLs...`);
       
-      // Import the startCrawler function
-      const { startCrawler } = await import("./lib/crawler");
+      // Import the required functions
+      const { startCrawler, resetCrawlerState } = await import("./lib/crawler");
+      
+      // Reset crawler state before starting
+      resetCrawlerState();
       
       // Start crawling for each selected URL
       for (const url of selectedUrls) {
         await startCrawler({
           startUrl: url,
-          prefixPath: settings.prefix_path || "",
-          antiPaths: (settings.anti_paths || "").split(",").filter(Boolean).map(path => path.trim()),
-          antiKeywords: (settings.anti_keywords || "").split(",").filter(Boolean).map(keyword => keyword.trim()),
-          sessionId: sessionId as number
+          prefixPath: settings.prefix_path || url.split('/').slice(0, 3).join('/'),
+          antiPaths: settings.anti_paths ? settings.anti_paths.split(',').map(p => p.trim()) : [],
+          antiKeywords: settings.anti_keywords ? settings.anti_keywords.split(',').map(k => k.trim()) : [],
+          sessionId: sessionId as number,
+          maxConcurrentRequests: settings.max_concurrent_requests,
+          unlimitedParallelism: !!settings.unlimited_parallelism
         });
       }
-      
-      // Note: No toast here because now we detect completion in the useEffect
     } catch (error) {
       console.error("Error during crawling:", error);
       toast.error("An error occurred during crawling. Check console for details.");
@@ -356,14 +361,64 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
 };
 
 // Main application component
-const MainApp = ({ chromaPath }: { chromaPath: string }) => {
-  const [activeTab, setActiveTab] = useState("sessions");
+const MainApp = ({ }: { chromaPath: string }) => {
+  const [sessions, setSessions] = useState<CrawlSession[]>([]);
   const [activeSession, setActiveSession] = useState<CrawlSession | null>(null);
-  const [apiKey, setApiKey] = useState("");
+  const [activeTab, setActiveTab] = useState("crawler");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  
+  // Add crawling status state
+  const [isCrawling, setIsCrawling] = useState(false);
+  
+  // Function to check crawling status periodically
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    
+    const checkCrawlingStatus = async () => {
+      try {
+        const { getCrawlingStatus } = await import("./lib/crawler");
+        const status = getCrawlingStatus();
+        setIsCrawling(status.isCrawling);
+      } catch (error) {
+        console.error("Error checking crawler status:", error);
+      }
+    };
+    
+    // Check immediately and then every 3 seconds
+    checkCrawlingStatus();
+    interval = setInterval(checkCrawlingStatus, 3000);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+  
+  // Function to stop crawling
+  const handleGlobalStopCrawling = async () => {
+    try {
+      const { stopCrawling } = await import("./lib/crawler");
+      stopCrawling();
+      toast.info("Stopping crawler. Currently processing URLs will complete...");
+      
+      // Reset crawler state after a short delay
+      setTimeout(async () => {
+        try {
+          const { resetCrawlerState } = await import("./lib/crawler");
+          resetCrawlerState();
+          console.log("Crawler state has been reset");
+        } catch (error) {
+          console.error("Error resetting crawler state:", error);
+        }
+      }, 5000); // Wait 5 seconds to ensure all processes have finished
+    } catch (error) {
+      console.error("Error stopping crawler:", error);
+      toast.error("Failed to stop crawler");
+    }
+  };
   
   // Persistent states for tabs
   const [urlsLoaded, setUrlsLoaded] = useState(false); // Track if URLs were already loaded
-  const [processedLoaded, setProcessedLoaded] = useState(false); // Track if processed URLs were loaded
   
   // Function to change active tab
   const handleTabChange = (value: string) => {
@@ -387,7 +442,6 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
     // When selecting a new session, we need to reset our loaded states
     if (activeSession?.id !== session.id) {
       setUrlsLoaded(false);
-      setProcessedLoaded(false);
     }
     
     setActiveSession(session);
@@ -398,9 +452,37 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
   useEffect(() => {
     const loadApiKey = async () => {
       try {
-        const settings = await getUserSettings();
-        if (settings.openai_key) {
-          setApiKey(settings.openai_key);
+        console.log("Loading API key from multiple sources...");
+        let key = "";
+        
+        // First try from database
+        try {
+          console.log("Checking database for API key...");
+          const settings = await getUserSettings();
+          if (settings?.openai_key) {
+            console.log(`Found API key in database settings (length: ${settings.openai_key.length})`);
+            key = settings.openai_key;
+          }
+        } catch (dbError) {
+          console.error("Error accessing database for API key:", dbError);
+        }
+        
+        // If no key from database, try environment variable
+        if (!key) {
+          console.log("Checking environment for API key...");
+          const envKey = process.env.OPENAI_API_KEY;
+          if (envKey) {
+            console.log(`Found API key in environment (length: ${envKey.length})`);
+            key = envKey;
+          }
+        }
+        
+        // If we found a key, use it
+        if (key) {
+          console.log(`Setting API key (length: ${key.length}, first 4 chars: ${key.substring(0, 4)}...)`);
+          setApiKey(key);
+        } else {
+          console.warn("No API key found in any source!");
         }
       } catch (error) {
         console.error("Failed to load API key:", error);
@@ -411,54 +493,80 @@ const MainApp = ({ chromaPath }: { chromaPath: string }) => {
   }, []);
 
   return (
-    <div className="container mx-auto py-4 space-y-4">
-      <header className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold tracking-tight">Anchoring</h1>
-        <div className="text-sm text-muted-foreground">
-          {activeSession ? `Session: ${activeSession.title}${activeSession.version ? ` V${activeSession.version}` : ""}` : "No active session"}
+    <TooltipProvider>
+      <div className="flex flex-col h-screen">
+        {/* Main navigation */}
+        <div className="border-b bg-background">
+          <div className="flex h-14 items-center px-4 justify-between">
+            <div className="flex items-center">
+              <BookmarkIcon className="h-6 w-6 text-primary" />
+              <h1 className="ml-2 text-lg font-semibold">Anchoring</h1>
+            </div>
+            
+            {/* Add global stop crawling button */}
+            {isCrawling && (
+              <Button 
+                variant="destructive" 
+                onClick={handleGlobalStopCrawling}
+                className="mr-4"
+                size="sm"
+              >
+                <StopCircle className="h-4 w-4 mr-2" />
+                Stop All Crawling
+              </Button>
+            )}
+            
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-muted-foreground">
+                {activeSession ? `Session: ${activeSession.title}${activeSession.version ? ` V${activeSession.version}` : ""}` : "No active session"}
+              </div>
+            </div>
+          </div>
         </div>
-      </header>
-      
-      <Tabs 
-        defaultValue="sessions" 
-        value={activeTab} 
-        onValueChange={handleTabChange} 
-        className="space-y-4"
-      >
-        <TabsList className="grid grid-cols-5">
-          <TabsTrigger value="sessions">Sessions</TabsTrigger>
-          <TabsTrigger value="crawler">Crawler</TabsTrigger>
-          <TabsTrigger value="processing">AI Processing</TabsTrigger>
-          <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
         
-        <TabsContent value="sessions">
-          <SessionsPage 
-            onSelectSession={handleSelectSession}
-          />
-        </TabsContent>
-        
-        <TabsContent value="crawler">
-          <CrawlerPage sessionId={activeSession?.id || null} />
-        </TabsContent>
-        
-        <TabsContent value="processing">
-          <AiProcessing 
-            sessionId={activeSession?.id || 0} 
-            apiKey={apiKey}
-          />
-        </TabsContent>
-        
-        <TabsContent value="knowledge">
-          <KnowledgeBase apiKey={apiKey} />
-        </TabsContent>
-        
-        <TabsContent value="settings">
-          <SettingsPage />
-        </TabsContent>
-      </Tabs>
-    </div>
+        <div className="container mx-auto py-4 space-y-4">
+          <Tabs 
+            defaultValue="sessions" 
+            value={activeTab} 
+            onValueChange={handleTabChange} 
+            className="space-y-4"
+          >
+            <TabsList className="grid grid-cols-5">
+              <TabsTrigger value="sessions">Sessions</TabsTrigger>
+              <TabsTrigger value="crawler">Crawler</TabsTrigger>
+              <TabsTrigger value="processing">AI Processing</TabsTrigger>
+              <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="sessions">
+              <SessionsPage 
+                onSelectSession={handleSelectSession}
+              />
+            </TabsContent>
+            
+            <TabsContent value="crawler">
+              <CrawlerPage sessionId={activeSession?.id || null} />
+            </TabsContent>
+            
+            <TabsContent value="processing">
+              <AiProcessing 
+                sessionId={activeSession?.id || 0} 
+                apiKey={apiKey}
+              />
+            </TabsContent>
+            
+            <TabsContent value="knowledge">
+              <KnowledgeBase apiKey={apiKey} />
+            </TabsContent>
+            
+            <TabsContent value="settings">
+              <SettingsPage />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+    </TooltipProvider>
   );
 };
 
