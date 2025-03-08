@@ -190,12 +190,22 @@ class DatabaseService:
                 port=Config.CHROMADB_PORT
             )
             
-            logger.info("Creating documentation_snippets collection")
+            logger.info("Creating documentation_snippets collection with maximum accuracy settings")
             # Create collection without an embedding function, we'll handle embeddings ourselves
             self.collection = await self.client.get_or_create_collection(
-                name="documentation_snippets"
+                name="documentation_snippets",
+                metadata={
+                    "hnsw:space": "cosine",           # Cosine distance for text embeddings
+                    "hnsw:construction_ef": 1000,     # Extremely high for maximum index quality (default: 100)
+                    "hnsw:M": 128,                    # Very high connectivity (default: 16)
+                    "hnsw:search_ef": 500,            # Exhaustive search exploration (default: 10)
+                    "hnsw:num_threads": 16,           # High parallelism for construction
+                    "hnsw:resize_factor": 1.2,        # Standard resize factor
+                    "hnsw:batch_size": 500,           # Larger batch size for better indexing
+                    "hnsw:sync_threshold": 2000       # Higher threshold for fewer disk syncs
+                }
             )
-            logger.info("ChromaDB collection initialized successfully")
+            logger.info("ChromaDB collection initialized successfully with maximum accuracy settings")
 
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {str(e)}\n{traceback.format_exc()}")
