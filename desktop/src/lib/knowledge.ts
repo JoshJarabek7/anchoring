@@ -168,11 +168,8 @@ export async function searchDocSnippets(params: DocSearchParams): Promise<Search
       const filters: any = {};
       
       // If a category is specified, add it to the filters
-      // Also try to adapt to what's actually in the database:
-      if (category) {
-        // We'll try to adapt our search to match what's in the database
-        // For this particular database, it seems all items are tagged as "framework"
-        filters.category = "framework"; // Use framework for all searches due to data issue
+      if (category && category !== 'all') {
+        filters.category = category; // Use the actual category instead of hardcoding to "framework"
       }
       
       // Component-specific filters
@@ -183,9 +180,9 @@ export async function searchDocSnippets(params: DocSearchParams): Promise<Search
         filters.framework = componentName;
         if (componentVersion) filters.framework_version = componentVersion;
       } else if (category === "library" && componentName) {
-        // Due to the data issue, treat libraries as frameworks
-        filters.framework = componentName;
-        if (componentVersion) filters.framework_version = componentVersion;
+        // Use the correct field names for library
+        filters.library = componentName;
+        if (componentVersion) filters.library_version = componentVersion;
       }
       
       console.log("Searching ChromaDB with filters:", filters);
@@ -227,8 +224,8 @@ export async function searchDocSnippets(params: DocSearchParams): Promise<Search
       const filters: any = {};
       
       // Set category filter
-      if (category) {
-        filters.category = "framework"; // Use framework for all searches due to data issue
+      if (category && category !== 'all') {
+        filters.category = category; // Use the actual category rather than hardcoding to "framework"
       }
       
       // Component-specific filters
@@ -239,9 +236,9 @@ export async function searchDocSnippets(params: DocSearchParams): Promise<Search
         filters.framework = componentName;
         if (componentVersion) filters.framework_version = componentVersion;
       } else if (category === "library" && componentName) {
-        // Due to the data issue, treat libraries as frameworks
-        filters.framework = componentName;
-        if (componentVersion) filters.framework_version = componentVersion;
+        // Use the correct field names for library
+        filters.library = componentName;
+        if (componentVersion) filters.library_version = componentVersion;
       }
       
       console.log("Getting documents with filters:", filters);

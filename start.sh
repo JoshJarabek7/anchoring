@@ -164,7 +164,11 @@ fi
 # Check if MCP is installed and register our server
 echo "Checking MCP installation..."
 if command -v mcp &> /dev/null; then
-  # Just install/reinstall the MCP server each time
+  # Run setup_collection.py first
+  echo "Setting up ChromaDB collection..."
+  python3 "$(pwd)/app/setup_collection.py"
+  
+  # Then install/reinstall the MCP server
   echo "Installing MCP server with Claude..."
   mcp install "$(pwd)/app/server.py"
 else

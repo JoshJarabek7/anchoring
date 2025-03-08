@@ -168,7 +168,11 @@ if %ERRORLEVEL% NEQ 0 (
 echo Checking MCP installation...
 where mcp >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
-  :: Just install/reinstall the MCP server each time
+  :: Run setup_collection.py first
+  echo Setting up ChromaDB collection...
+  python "%CD%\app\setup_collection.py"
+  
+  :: Then install/reinstall the MCP server
   echo Installing MCP server with Claude...
   mcp install "%CD%\app\server.py"
 ) else (
