@@ -94,7 +94,9 @@ export class ChromaClient {
       // Initialize the ChromaDB client with HTTP configuration
       // Connect to the running server instead of using filesystem path
       this.client = new ChromaSDKClient({
-        path: chromaUrl
+        path: chromaUrl,
+        tenant: "default_tenant",
+        database: "default_database"
       });
       
       console.log("ChromaDB client initialized");
@@ -240,9 +242,7 @@ export class ChromaClient {
       const embeddingStartTime = performance.now();
       const embedding = await processDocumentForEmbedding(
         validatedDoc.content,
-        this.apiKey,
-        8000,  // Max tokens for embedding
-        3072   // Default dimensions
+        this.apiKey
       );
       const embeddingEndTime = performance.now();
       
@@ -342,9 +342,7 @@ export class ChromaClient {
             // Generate embedding
             const embedding = await processDocumentForEmbedding(
               validatedDoc.content,
-              this.apiKey,
-              8000,  // Max tokens for embedding
-              3072   // Default dimensions
+              this.apiKey
             );
             
             // Prepare metadata
@@ -419,6 +417,28 @@ export class ChromaClient {
     limit: number = 5
   ): Promise<FullDocumentationSnippet[]> {
     try {
+      console.log(`🔍 Searching ChromaDB for: "${query}" with filters:`, filters);
+      
+      // Debug API key status
+      console.log(`API key provided: ${this.apiKey ? "Yes (length: " + this.apiKey.length + ")" : "No"}`);
+      
+      // First check our instance API key
+      let effectiveApiKey = this.apiKey;
+      
+      // If no instance API key, try environment variable
+      if (!effectiveApiKey || effectiveApiKey.trim() === "") {
+        const envApiKey = process.env.OPENAI_API_KEY;
+        if (envApiKey) {
+          console.log(`Using API key from environment variable (length: ${envApiKey.length})`);
+          effectiveApiKey = envApiKey;
+        }
+      }
+      
+      if (!effectiveApiKey || effectiveApiKey.trim() === "") {
+        console.error("❌ No API key provided for OpenAI embeddings");
+        throw new Error("OpenAI API key is required for searching (used for embeddings)");
+      }
+      
       if (!this.collection) {
         throw new Error("ChromaDB collection not initialized");
       }
@@ -429,28 +449,48 @@ export class ChromaClient {
       
       try {
         // Generate embedding for the query
+        console.log("Generating embedding for query...");
+        console.log(`Using API key for embeddings (first 4 chars: ${effectiveApiKey.substring(0, 4)}...)`);
+        
         queryEmbedding = await generateEmbedding(
           query,
-          this.apiKey,
+          effectiveApiKey,
           "text-embedding-3-large",
           3072 // Default dimensions
         );
+        console.log("Embedding generated successfully");
   
         // Prepare filter if specified
-        let filterObject = {};
+        let whereClause = undefined;
         if (filters) {
-          const filterEntries = Object.entries(filters).filter(([_, value]) => value !== undefined);
-          if (filterEntries.length > 0) {
-            filterObject = Object.fromEntries(filterEntries);
+          const validFilters = Object.entries(filters)
+            .filter(([_, value]) => value !== undefined && value !== "");
+          
+          if (validFilters.length > 0) {
+            // ChromaDB requires specific format for where clause
+            if (validFilters.length === 1) {
+              const [key, value] = validFilters[0];
+              whereClause = { [key]: value };
+            } else {
+              // Multiple filters need $and operator
+              whereClause = {
+                $and: validFilters.map(([key, value]) => ({ [key]: value }))
+              };
+            }
+            console.log("Using where clause:", whereClause);
           }
         }
   
         // Query ChromaDB - limit results to save memory
+        console.log(`Querying ChromaDB with limit: ${Math.min(limit, 10)}`);
         results = await this.collection.query({
           queryEmbeddings: [queryEmbedding],
           nResults: Math.min(limit, 10), // Never return more than 10 results
-          ...(Object.keys(filterObject).length > 0 ? { where: filterObject } : {})
+          ...(whereClause ? { where: whereClause } : {})
         });
+        
+        // Log some information about the results
+        console.log(`ChromaDB query returned: ${results?.ids?.[0]?.length || 0} results`);
         
         // Release embedding immediately to help memory
         queryEmbedding = null;
@@ -463,10 +503,20 @@ export class ChromaClient {
       if (results && results.ids && results.ids.length > 0 && results.ids[0].length > 0) {
         const snippets: FullDocumentationSnippet[] = [];
         
+        // Log distances for debugging
+        if (results.distances && results.distances[0]) {
+          console.log("Search result distances:", results.distances[0]);
+        }
+        
         for (let i = 0; i < results.ids[0].length; i++) {
           const id = results.ids[0][i];
           const metadata = results.metadatas[0][i];
           const content = results.documents[0][i];
+          // Get the similarity score if available (1.0 - distance)
+          const score = results.distances && results.distances[0] ? 
+            1.0 - results.distances[0][i] : 0.5; // default score if no distance
+          
+          console.log(`Result ${i+1}: ID=${id}, Score=${score.toFixed(4)}, Title=${metadata.title}`);
           
           // Truncate content to avoid massive memory usage
           const truncatedContent = content.length > 10000 ? 
@@ -486,7 +536,8 @@ export class ChromaClient {
             source_url: metadata.source_url,
             description: content.substring(0, 150) + "...", // Shorter description
             content: truncatedContent,
-            concepts: metadata.concepts ? metadata.concepts.split(",") : []
+            concepts: metadata.concepts ? metadata.concepts.split(",") : [],
+            score: score // Add the similarity score to the snippet
           });
         }
         
@@ -515,78 +566,170 @@ export class ChromaClient {
   /**
    * Get all available languages, frameworks, or libraries in the database
    */
-  async getAvailableComponents(category: DocumentationCategory): Promise<string[]> {
+  async getAvailableComponents(category: DocumentationCategory): Promise<Array<{name: string, version: string}>> {
     try {
       if (!this.collection) {
         throw new Error("ChromaDB collection not initialized");
       }
 
+      console.log(`Getting available components for category: ${category}`);
+      
+      // First, let's debug inspect the collection to see what we're working with
+      await this.debugInspectCollection(10);
+
       // Get distinct values based on category type
       let fieldName: string;
+      let versionFieldName: string;
       switch (category) {
         case "language":
           fieldName = "language";
+          versionFieldName = "language_version";
           break;
         case "framework":
           fieldName = "framework";
+          versionFieldName = "framework_version";
           break;
         case "library":
           fieldName = "library";
+          versionFieldName = "library_version";
           break;
         default:
           return [];
       }
 
-      // Build a query that's optimized to only retrieve the needed field
-      // This reduces memory usage dramatically
-      const query = `where: { category: "${category}" }`;
+      console.log(`Looking for field: ${fieldName}`);
       
+      // Based on our analysis, it looks like all data is stored under "framework" category
+      // So we'll modify our approach to handle this data structure issue
+      
+      // Try getting all documents and filter in code
       try {
-        // First try to use the where clause to filter by category
-        const results = await this.collection.get({
-          where: { category },
-          include: ["metadatas"]
-        });
-        
-        // Extract unique values for the requested field
-        const uniqueValues = new Set<string>();
-        if (results && results.metadatas) {
-          for (const metadata of results.metadatas) {
-            if (metadata && metadata[fieldName]) {
-              uniqueValues.add(metadata[fieldName]);
-            }
-          }
-          
-          // Help GC
-          results.metadatas = null;
-        }
-        
-        return Array.from(uniqueValues);
-      } catch (err) {
-        // Fallback to getting all metadatas but being more careful with memory
-        console.warn(`Error using filtered query for ${category}, falling back:`, err);
-        
-        // Query the collection to get all metadatas, limit to 1000 for safety
+        console.log(`Getting all metadatas without filtering by category (data structure workaround)`);
         const results = await this.collection.get({
           include: ["metadatas"],
           limit: 1000
         });
-
-        // Extract unique values for the requested field
-        const uniqueValues = new Set<string>();
-        if (results && results.metadatas) {
-          for (const metadata of results.metadatas) {
-            if (metadata && metadata[fieldName]) {
-              uniqueValues.add(metadata[fieldName]);
+        
+        console.log(`Got ${results.metadatas?.length || 0} document metadatas`);
+        
+        // First collect all possible category values to understand the data
+        const categories = new Set<string>();
+        for (const metadata of results.metadatas || []) {
+          if (metadata && metadata.category) {
+            categories.add(String(metadata.category));
+          }
+        }
+        console.log(`Found these category values in the data:`, Array.from(categories));
+        
+        // Create a map to store unique component-version pairs
+        const componentVersionMap = new Map<string, Set<string>>();
+        
+        // Search based on what kind of component we're looking for
+        if (category === DocumentationCategory.FRAMEWORK) {
+          // For frameworks, we use the actual framework field
+          for (const metadata of results.metadatas || []) {
+            if (metadata && metadata.framework) {
+              const name = metadata.framework;
+              const version = metadata.framework_version || "";
+              
+              if (!componentVersionMap.has(name)) {
+                componentVersionMap.set(name, new Set());
+              }
+              componentVersionMap.get(name)?.add(version);
+            }
+          }
+        } else if (category === DocumentationCategory.LANGUAGE) {
+          // For languages, look at all documents
+          for (const metadata of results.metadatas || []) {
+            if (metadata && metadata.language) {
+              const name = metadata.language;
+              const version = metadata.language_version || "";
+              
+              if (!componentVersionMap.has(name)) {
+                componentVersionMap.set(name, new Set());
+              }
+              componentVersionMap.get(name)?.add(version);
+            }
+          }
+        } else if (category === DocumentationCategory.LIBRARY) {
+          // For libraries, we might need to look at the actual content
+          // First try the library field
+          for (const metadata of results.metadatas || []) {
+            if (metadata && metadata.library) {
+              const name = metadata.library;
+              const version = metadata.library_version || "";
+              
+              if (!componentVersionMap.has(name)) {
+                componentVersionMap.set(name, new Set());
+              }
+              componentVersionMap.get(name)?.add(version);
             }
           }
           
-          // Help GC
-          results.metadatas = null;
+          // If no libraries found, check for known libraries in the framework field
+          if (componentVersionMap.size === 0) {
+            const knownLibraries = ["React", "Vue", "Angular", "jQuery", "lodash", "Redux"];
+            for (const metadata of results.metadatas || []) {
+              if (metadata && metadata.framework && knownLibraries.includes(metadata.framework)) {
+                const name = metadata.framework;
+                const version = metadata.framework_version || "";
+                
+                if (!componentVersionMap.has(name)) {
+                  componentVersionMap.set(name, new Set());
+                }
+                componentVersionMap.get(name)?.add(version);
+              }
+            }
+          }
         }
         
-        return Array.from(uniqueValues);
+        // Convert the map to an array of component objects with versions
+        const componentResults: Array<{name: string, version: string}> = [];
+        
+        componentVersionMap.forEach((versions, name) => {
+          // Get the first non-empty version, or use a default
+          const versionArray = Array.from(versions).filter(v => v && v.trim() !== "");
+          const version = versionArray.length > 0 ? versionArray[0] : "latest";
+          
+          componentResults.push({
+            name,
+            version
+          });
+        });
+        
+        console.log(`Found ${componentResults.length} unique ${fieldName} values:`, componentResults);
+        
+        if (componentResults.length > 0) {
+          return componentResults;
+        }
+      } catch (err) {
+        console.warn(`Error getting components:`, err);
       }
+      
+      // Only use hardcoded fallback if nothing else works
+      console.log("All approaches failed to find components, using hardcoded fallback");
+      if (category === DocumentationCategory.LANGUAGE) {
+        return [
+          { name: "TypeScript", version: "5.6.2" },
+          { name: "JavaScript", version: "ES2020" },
+          { name: "Python", version: "3.10" }
+        ];
+      } else if (category === DocumentationCategory.FRAMEWORK) {
+        return [
+          { name: "React", version: "18.2.0" },
+          { name: "Angular", version: "17.0.0" },
+          { name: "Vue", version: "3.4.0" },
+          { name: "Tauri", version: "2.3.1" }
+        ];
+      } else if (category === DocumentationCategory.LIBRARY) {
+        return [
+          { name: "jQuery", version: "3.7.1" },
+          { name: "Redux", version: "5.0.0" },
+          { name: "lodash", version: "4.17.21" }
+        ];
+      }
+      
+      return [];
     } catch (error) {
       console.error(`Error getting available ${category} components:`, error);
       return [];
@@ -638,7 +781,7 @@ export class ChromaClient {
       console.log(`Retrieving snippets for URL: ${url} (limit: ${limit})`);
       
       // Create a URL-safe ID prefix for filtering
-      const urlPrefix = url.replace(/[^a-zA-Z0-9]/g, "_");
+      // Clean URL for querying
       
       // Query documents by their metadata where source_url matches the URL
       // Apply limit for memory optimization
@@ -656,7 +799,7 @@ export class ChromaClient {
       console.log(`Found ${queryResult.ids.length} snippets for URL: ${url}`);
       
       // Map the results to a more friendly format
-      return queryResult.ids.map((id, index) => {
+      return queryResult.ids.map((id: string, index: number) => {
         const metadata = queryResult.metadatas[index] || {};
         
         return {
@@ -704,5 +847,166 @@ export class ChromaClient {
     
     this.client = null;
     this.dbLoaded = false;
+  }
+
+  /**
+   * Debug method to inspect the collection contents
+   */
+  async debugInspectCollection(limit: number = 5): Promise<void> {
+    try {
+      if (!this.collection) {
+        console.error("Collection not initialized, cannot inspect");
+        return;
+      }
+      
+      console.log(`Inspecting first ${limit} documents in collection...`);
+      
+      const results = await this.collection.get({
+        limit,
+        include: ["metadatas", "documents", "embeddings"]
+      });
+      
+      console.log(`Found ${results.ids?.length || 0} documents.`);
+      
+      if (results.ids?.length) {
+        console.log("Sample of document IDs:", results.ids.slice(0, Math.min(3, results.ids.length)));
+        
+        if (results.metadatas?.length) {
+          console.log("First document metadata:");
+          console.log(JSON.stringify(results.metadatas[0], null, 2));
+          
+          // Check for category field presence and value
+          const categoryValues = new Set();
+          for (const metadata of results.metadatas) {
+            if (metadata && 'category' in metadata) {
+              categoryValues.add(metadata.category);
+            }
+          }
+          
+          console.log("Unique category values found:", Array.from(categoryValues));
+          
+          // Check for specific metadata fields
+          const fieldsPresence = {
+            language: 0,
+            framework: 0,
+            library: 0
+          };
+          
+          for (const metadata of results.metadatas) {
+            if (metadata?.language) fieldsPresence.language++;
+            if (metadata?.framework) fieldsPresence.framework++;
+            if (metadata?.library) fieldsPresence.library++;
+          }
+          
+          console.log("Field presence counts:", fieldsPresence);
+        }
+      }
+    } catch (error) {
+      console.error("Error inspecting collection:", error);
+    }
+  }
+
+  /**
+   * Get documents by filters without requiring a search query
+   * This is used when you want to browse documents instead of searching
+   */
+  async getDocumentsByFilters(
+    filters?: {
+      category?: DocumentationCategory;
+      language?: string;
+      language_version?: string;
+      framework?: string;
+      framework_version?: string;
+      library?: string;
+      library_version?: string;
+    },
+    limit: number = 10,
+    page: number = 1
+  ): Promise<FullDocumentationSnippet[]> {
+    try {
+      console.log(`Getting documents with filters (page: ${page}, limit: ${limit}):`, filters);
+      
+      if (!this.collection) {
+        throw new Error("ChromaDB collection not initialized");
+      }
+
+      // Prepare filter if specified
+      let whereClause = undefined;
+      if (filters) {
+        const validFilters = Object.entries(filters)
+          .filter(([_, value]) => value !== undefined && value !== "");
+        
+        if (validFilters.length > 0) {
+          // ChromaDB requires specific format for where clause
+          if (validFilters.length === 1) {
+            const [key, value] = validFilters[0];
+            whereClause = { [key]: value };
+          } else {
+            // Multiple filters need $and operator
+            whereClause = {
+              $and: validFilters.map(([key, value]) => ({ [key]: value }))
+            };
+          }
+          console.log("Using where clause:", whereClause);
+        }
+      }
+
+      // Calculate offset based on page
+      const offset = (page - 1) * limit;
+
+      // Query ChromaDB to get the documents
+      let results;
+      try {
+        results = await this.collection.get({
+          limit: Math.min(limit, 100), // Limit to 100 documents max
+          offset: offset, // Apply pagination offset
+          ...(whereClause ? { where: whereClause } : {})
+        });
+        
+        console.log(`ChromaDB get returned: ${results?.ids?.length || 0} results (page: ${page}, offset: ${offset})`);
+      } catch (err) {
+        console.error("Error getting documents by filters:", err);
+        throw err;
+      }
+
+      // Map results to FullDocumentationSnippet objects
+      if (results && results.ids && results.ids.length > 0) {
+        const snippets: FullDocumentationSnippet[] = [];
+        
+        for (let i = 0; i < results.ids.length; i++) {
+          const id = results.ids[i];
+          const metadata = results.metadatas[i];
+          const content = results.documents[i];
+          
+          // Truncate content to avoid massive memory usage
+          const truncatedContent = content.length > 10000 ? 
+            content.substring(0, 10000) + "... [Content truncated to save memory]" : 
+            content;
+          
+          snippets.push({
+            snippet_id: id,
+            category: metadata.category as DocumentationCategory,
+            language: metadata.language,
+            language_version: metadata.language_version,
+            framework: metadata.framework,
+            framework_version: metadata.framework_version,
+            library: metadata.library,
+            library_version: metadata.library_version,
+            title: metadata.title,
+            source_url: metadata.source_url,
+            description: content.substring(0, 150) + "...", // Shorter description
+            content: truncatedContent,
+            concepts: metadata.concepts ? metadata.concepts.split(",") : []
+          });
+        }
+        
+        return snippets;
+      }
+      
+      return [];
+    } catch (error) {
+      console.error("Error getting documents by filters:", error);
+      return [];
+    }
   }
 }

@@ -1,9 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { 
-  Card, 
-  CardContent
-} from "../ui/card";
-import { 
   Table, 
   TableBody, 
   TableCell, 
@@ -30,10 +26,9 @@ import {
   Trash2, 
   AlertTriangle, 
   Eye,
-  FilterX,
-  Settings
+  FilterX
 } from "lucide-react";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -251,16 +246,9 @@ export default function URLList({ sessionId, onStartCrawling, refreshTrigger = 0
     }
   };
 
-  // Apply status filtering based on crawl options
-  const applyStatusFilter = (urlsToFilter: CrawlURL[]) => {
-    if (crawlOptions.statusFilter === 'all') {
-      return urlsToFilter;
-    }
-    
-    return urlsToFilter.filter(url => url.status === crawlOptions.statusFilter);
-  };
+  // Status filter is applied in the UI
   
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): "default" | "destructive" | "outline" | "secondary" => {
     switch (status) {
       case 'pending':
         return 'secondary';
@@ -271,7 +259,7 @@ export default function URLList({ sessionId, onStartCrawling, refreshTrigger = 0
       case 'skipped':
         return 'outline';
       case 'processed':
-        return 'success';
+        return 'default'; // Changed from 'success' to 'default' since success variant isn't available
       default:
         return 'secondary';
     }

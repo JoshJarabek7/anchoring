@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { 
   Card, 
   CardContent, 
@@ -14,7 +14,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Label } from "../ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Switch } from "../ui/switch";
-import { getURLs, CrawlURL, getUserSettings, saveUserSettings, updateURLStatus } from "../../lib/db";
+import { getURLs, CrawlURL, getProcessingSettings, saveProcessingSettings } from "../../lib/db";
 import ProcessingPipeline from "./ProcessingPipeline";
 import { DocumentationCategory } from "../../lib/db";
 import { Badge } from "../ui/badge";
@@ -58,30 +58,41 @@ const PreviewSnippets = ({
 };
 
 export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
+  const [loading, setLoading] = useState<boolean>(false);
+  const [processing, setProcessing] = useState<boolean>(false);
+  const [processedCount, setProcessedCount] = useState<number>(0);
+  const [totalToProcess, setTotalToProcess] = useState<number>(0);
+  const [settings, setSettings] = useState<{
+    language?: string | undefined;
+    languageVersion?: string | undefined;
+    framework?: string | undefined;
+    frameworkVersion?: string | undefined;
+    library?: string | undefined;
+    libraryVersion?: string | undefined;
+  }>({});
   const [urls, setUrls] = useState<CrawlURL[]>([]);
-  const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("");
   const [filteredUrls, setFilteredUrls] = useState<CrawlURL[]>([]);
-  const [selectAll, setSelectAll] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [category, setCategory] = useState<DocumentationCategory>(DocumentationCategory.FRAMEWORK);
-  const [language, setLanguage] = useState<string>("");
-  const [languageVersion, setLanguageVersion] = useState<string>("");
-  const [framework, setFramework] = useState<string>("");
-  const [frameworkVersion, setFrameworkVersion] = useState<string>("");
-  const [library, setLibrary] = useState<string>("");
-  const [libraryVersion, setLibraryVersion] = useState<string>("");
-  const [saving, setSaving] = useState(false);
-  const [includeProcessed, setIncludeProcessed] = useState(false);
+  const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
+  const [selectAll, setSelectAll] = useState<boolean>(false);
+  const [processedUrls, setProcessedUrls] = useState<string[]>([]);
+  const [snippetsVisible, setSnippetsVisible] = useState<{ [key: string]: boolean }>({});
+  const [filter, setFilter] = useState<string>("");
+  const [includeProcessed, setIncludeProcessed] = useState<boolean>(true); // Default to showing all URLs
+  const [aiSystem, setAiSystem] = useState<string>("You are a documentation expert...");
+  const [prompt, setPrompt] = useState<string>("Extract documentation snippets...");
+  const [processingStopped, setProcessingStopped] = useState<boolean>(false);
+  
+  // Pagination state
+  const [allUrls, setAllUrls] = useState<CrawlURL[]>([]);
+  const [page, setPage] = useState<number>(1);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const URLS_PER_PAGE = 50; // Number of URLs to display per page
   
   // Use our custom hook to manage processed URLs
   const {
-    processedUrls,
+    processedUrls: customProcessedUrls,
     getSnippetCount,
-    loading: loadingProcessed,
-    error: processedError,
-    loadProcessedUrls,
     markUrlsAsProcessed
   } = useProcessedUrls(sessionId, apiKey);
   
@@ -95,61 +106,142 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
     clearSnippets
   } = useSnippets(apiKey);
   
+  // Add new state for category selection
+  const [selectedCategories, setSelectedCategories] = useState<{
+    language: boolean;
+    framework: boolean;
+    library: boolean;
+  }>({
+    language: false,
+    framework: false,
+    library: false
+  });
+  
   // No cleanup needed - toasts auto-dismiss
   
-  // Load saved AI processing settings
+  // Helper function to handle input changes properly
+  const handleInputChange = (field: string, value: string) => {
+    setSettings(prev => {
+      // Just update with the new value
+      return { ...prev, [field]: value };
+    });
+  };
+  
+  // Load AI processing settings for the current session
   const loadAiProcessingSettings = async () => {
+    if (!sessionId) return;
+    
     try {
-      const settings = await getUserSettings();
-      if (settings) {
-        if (settings.language) setLanguage(settings.language);
-        if (settings.language_version) setLanguageVersion(settings.language_version);
-        if (settings.framework) setFramework(settings.framework);
-        if (settings.framework_version) setFrameworkVersion(settings.framework_version);
-        if (settings.library) setLibrary(settings.library);
-        if (settings.library_version) setLibraryVersion(settings.library_version);
+      console.log(`Loading processing settings for session ${sessionId}`);
+      
+      // Get session-specific settings from the database
+      const sessionSettings = await getProcessingSettings(sessionId);
+      console.log("Retrieved session settings:", sessionSettings);
+      
+      if (sessionSettings) {
+        // Create a new settings object to replace the current one
+        const newSettings = {
+          language: sessionSettings.language || undefined,
+          languageVersion: sessionSettings.language_version || undefined,
+          framework: sessionSettings.framework || undefined,
+          frameworkVersion: sessionSettings.framework_version || undefined,
+          library: sessionSettings.library || undefined,
+          libraryVersion: sessionSettings.library_version || undefined
+        };
+        
+        // Set all settings at once to avoid controlled/uncontrolled input warnings
+        setSettings(newSettings);
+        
+        // Update the category checkboxes based on the category field
+        // If category is set, use it to determine which checkbox should be selected
+        if (sessionSettings.category) {
+          setSelectedCategories({
+            language: sessionSettings.category === DocumentationCategory.LANGUAGE,
+            framework: sessionSettings.category === DocumentationCategory.FRAMEWORK,
+            library: sessionSettings.category === DocumentationCategory.LIBRARY
+          });
+        } else {
+          // For backward compatibility: set based on presence of values
+          setSelectedCategories({
+            language: !!sessionSettings.language,
+            framework: !!sessionSettings.framework,
+            library: !!sessionSettings.library
+          });
+        }
+      } else {
+        // If no settings found, use empty settings
+        setSettings({
+          language: undefined,
+          languageVersion: undefined,
+          framework: undefined,
+          frameworkVersion: undefined,
+          library: undefined,
+          libraryVersion: undefined
+        });
+        setSelectedCategories({
+          language: false,
+          framework: false,
+          library: false
+        });
       }
     } catch (error) {
       console.error("Failed to load AI processing settings:", error);
+      toast.error("Failed to load processing settings for this session");
     }
   };
   
   // Save AI processing settings when they change
   const saveAiProcessingSettings = async () => {
+    if (!sessionId) {
+      toast.error("No session selected");
+      return;
+    }
+    
     try {
-      setSaving(true);
+      setLoading(true);
       
       // Validate based on selected category
       let isValid = true;
       let missingFields: string[] = [];
       
-      if (category === DocumentationCategory.LANGUAGE) {
-        if (!language) {
+      // Updated validation logic: Only validate fields for selected categories
+      if (selectedCategories.language) {
+        if (!settings.language) {
           isValid = false;
-          missingFields.push("Language");
+          missingFields.push("Language Name");
         }
-        if (!languageVersion) {
+        if (!settings.languageVersion) {
           isValid = false;
           missingFields.push("Language Version");
         }
-      } else if (category === DocumentationCategory.FRAMEWORK) {
-        if (!framework) {
+      }
+      
+      if (selectedCategories.framework) {
+        if (!settings.framework) {
           isValid = false;
-          missingFields.push("Framework");
+          missingFields.push("Framework Name");
         }
-        if (!frameworkVersion) {
+        if (!settings.frameworkVersion) {
           isValid = false;
           missingFields.push("Framework Version");
         }
-      } else if (category === DocumentationCategory.LIBRARY) {
-        if (!library) {
+      }
+      
+      if (selectedCategories.library) {
+        if (!settings.library) {
           isValid = false;
-          missingFields.push("Library");
+          missingFields.push("Library Name");
         }
-        if (!libraryVersion) {
+        if (!settings.libraryVersion) {
           isValid = false;
           missingFields.push("Library Version");
         }
+      }
+      
+      // Ensure at least one category is selected
+      if (!selectedCategories.language && !selectedCategories.framework && !selectedCategories.library) {
+        isValid = false;
+        missingFields.push("At least one Documentation Category");
       }
       
       if (!isValid) {
@@ -157,55 +249,68 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
         return;
       }
       
-      // Only include fields that have values
-      const settingsToSave: any = {};
+      // Save settings to the database for this specific session
+      // Save all field values but mark the category
+      await saveProcessingSettings({
+        session_id: sessionId,
+        language: settings.language,
+        language_version: settings.languageVersion,
+        framework: settings.framework,
+        framework_version: settings.frameworkVersion,
+        library: settings.library,
+        library_version: settings.libraryVersion,
+        // Add a metadata field to indicate which is the category
+        category: selectedCategories.language 
+          ? DocumentationCategory.LANGUAGE 
+          : selectedCategories.framework 
+            ? DocumentationCategory.FRAMEWORK 
+            : DocumentationCategory.LIBRARY
+      });
       
-      // ALWAYS send all fields, even if empty (just set them to null if empty)
-      // This ensures update queries actually include these fields
-      settingsToSave.language = language || null;
-      settingsToSave.language_version = languageVersion || null;
-      settingsToSave.framework = framework || null;
-      settingsToSave.framework_version = frameworkVersion || null;
-      settingsToSave.library = library || null;
-      settingsToSave.library_version = libraryVersion || null;
-      
-      console.log("About to save AI processing settings:", settingsToSave);
-      
-      // Save regardless of whether we have values
-      await saveUserSettings(settingsToSave);
-      console.log("Saved AI processing settings:", settingsToSave);
       toast.success("AI processing settings saved successfully");
     } catch (error) {
       console.error("Failed to save AI processing settings:", error);
       toast.error("Failed to save AI processing settings");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
   
   const loadURLs = async () => {
     try {
       setLoading(true);
-      const data = await getURLs(sessionId);
+      // Always include content, but we'll only be using the markdown field
+      const data = await getURLs(sessionId, true);
       
       // Filter URLs based on the includeProcessed setting
       let availableUrls = data.filter(url => {
-        // First make sure we have HTML content
-        if (!url.html) return false;
+        // Only include URLs that have markdown content
+        if (!url.markdown) return false;
         
         // If includeProcessed is true, show both crawled AND processed URLs
         if (includeProcessed) {
-          return url.status === "crawled" || url.status === "processed";
+          return url.status === "crawled" || url.status === "processed" || url.status === "pending";
         }
         
         // Otherwise, only show crawled URLs that have not been processed
-        return url.status === "crawled" && !processedUrls.includes(url.url);
+        return (url.status === "crawled" || url.status === "pending") && !customProcessedUrls.includes(url.url);
       });
       
-      setUrls(availableUrls);
-      setFilteredUrls(availableUrls);
+      // Keep all filtered URLs in state
+      setAllUrls(availableUrls);
       
-      // Load AI processing settings after URLs are loaded
+      // Apply pagination to the filtered URLs
+      const paginatedUrls = availableUrls.slice(0, URLS_PER_PAGE);
+      setUrls(paginatedUrls);
+      setFilteredUrls(paginatedUrls);
+      
+      // Set hasMore flag if we have more URLs than the current page shows
+      setHasMore(availableUrls.length > URLS_PER_PAGE);
+      
+      // Reset page number
+      setPage(1);
+      
+      // Load AI processing settings for this session
       await loadAiProcessingSettings();
     } catch (error) {
       console.error("Failed to load URLs:", error);
@@ -215,23 +320,62 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
     }
   };
   
+  // Handle loading more URLs when the "Load More" button is clicked
+  const loadMoreUrls = () => {
+    setLoadingMore(true);
+    
+    // Calculate next page of URLs
+    const nextPage = page + 1;
+    const startIdx = (nextPage - 1) * URLS_PER_PAGE;
+    const endIdx = nextPage * URLS_PER_PAGE;
+    
+    // Filter all URLs based on the current filter
+    const filteredAllUrls = filter ? 
+      allUrls.filter(url => url.url.toLowerCase().includes(filter.toLowerCase())) : 
+      allUrls;
+    
+    // Get the next page of URLs
+    const nextPageUrls = filteredAllUrls.slice(startIdx, endIdx);
+    
+    // Update state
+    setUrls(prevUrls => [...prevUrls, ...nextPageUrls]);
+    setFilteredUrls(prevFilteredUrls => [...prevFilteredUrls, ...nextPageUrls]);
+    setPage(nextPage);
+    setHasMore(endIdx < filteredAllUrls.length);
+    setLoadingMore(false);
+  };
+  
   useEffect(() => {
     if (sessionId) {
+      // Load URLs for the new session (which will also load settings)
       loadURLs();
     }
-  }, [sessionId, processedUrls, includeProcessed]); // Re-run when includeProcessed changes
+  }, [sessionId]); // Only respond to sessionId changes
+  
+  useEffect(() => {
+    if (sessionId) {
+      // Reload URLs when these dependencies change
+      loadURLs();
+    }
+  }, [customProcessedUrls, includeProcessed]); // Re-run when these change
   
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.toLowerCase();
     setFilter(value);
     
     if (!value) {
-      setFilteredUrls(urls);
+      // Reset to first page of all URLs
+      setFilteredUrls(allUrls.slice(0, URLS_PER_PAGE));
+      setPage(1);
+      setHasMore(allUrls.length > URLS_PER_PAGE);
     } else {
-      const filtered = urls.filter(url => 
+      // Filter all URLs and apply pagination
+      const filtered = allUrls.filter(url => 
         url.url.toLowerCase().includes(value)
       );
-      setFilteredUrls(filtered);
+      setFilteredUrls(filtered.slice(0, URLS_PER_PAGE));
+      setPage(1);
+      setHasMore(filtered.length > URLS_PER_PAGE);
     }
   };
   
@@ -318,14 +462,14 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
     setProcessing(false);
   };
   
-  // Calculate the selected URLs with their HTML content
+  // Calculate the selected URLs with their markdown content
   const selectedUrlsWithContent = urls
-    .filter(url => selectedUrls.includes(url.url) && url.html)
+    .filter(url => selectedUrls.includes(url.url) && url.markdown)
     .map(url => ({
       // Make sure id is always a number to match the required type
       id: url.id || 0, 
       url: url.url,
-      html: url.html
+      markdown: url.markdown || ""
     }));
   
   useEffect(() => {
@@ -347,43 +491,116 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
     }
     
     return (
-      <div className="space-y-2">
-        {filteredUrls.map(url => {
-          // URL is processed if its status is 'processed' OR it's in the processedUrls list
-          const isProcessed = url.status === "processed" || processedUrls.includes(url.url);
-          
-          return (
-            <div 
-              key={url.url} 
-              className={`flex items-center space-x-2 p-2 border rounded ${
-                isProcessed ? 'bg-green-50 dark:bg-green-950 border-green-200' : 'hover:bg-muted/30'
-              }`}
-            >
-              <Checkbox
-                id={`url-${url.url}`}
-                checked={selectedUrls.includes(url.url)}
-                onCheckedChange={(checked) => handleSelectURL(url.url, checked === true)}
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="include-processed" 
+                checked={includeProcessed}
+                onCheckedChange={handleToggleIncludeProcessed}
               />
-              <label 
-                htmlFor={`url-${url.url}`}
-                className="flex-1 text-sm cursor-pointer truncate"
-                title={url.url}
-              >
-                <div className="flex items-center">
-                  <span className="truncate">{url.url}</span>
-                  {isProcessed && (
-                    <Badge 
-                      variant="outline" 
-                      className="ml-2 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 text-xs"
-                    >
-                      {includeProcessed ? "Reprocess" : "Processed"}
-                    </Badge>
-                  )}
-                </div>
-              </label>
+              <Label htmlFor="include-processed">Include already processed URLs</Label>
             </div>
-          );
-        })}
+            
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleSelectAll}
+              disabled={filteredUrls.length === 0}
+            >
+              {selectAll ? "Deselect All" : "Select All"}
+            </Button>
+          </div>
+          
+          <Input
+            placeholder="Filter URLs..."
+            value={filter}
+            onChange={handleFilterChange}
+            className="mb-2"
+          />
+          
+          <div className="flex flex-wrap justify-between text-sm text-muted-foreground mb-2 gap-2">
+            <div className="flex gap-3">
+              <span>Total: {filteredUrls.length} URLs</span>
+              {includeProcessed && (
+                <span>
+                  Processed: {filteredUrls.filter(url => url.status === "processed" || customProcessedUrls.includes(url.url)).length}
+                </span>
+              )}
+            </div>
+            <span>Selected: {selectedUrls.length}</span>
+          </div>
+          
+          <ScrollArea className="h-[600px] border rounded-md">
+            {filteredUrls.map(url => {
+              // URL is processed if its status is 'processed' OR it's in the processedUrls list
+              const isProcessed = url.status === "processed" || customProcessedUrls.includes(url.url);
+              
+              return (
+                <div 
+                  key={url.url} 
+                  className={`flex items-center space-x-2 p-2 border rounded ${
+                    isProcessed ? 'bg-green-50 dark:bg-green-950 border-green-200' : 'hover:bg-muted/30'
+                  }`}
+                >
+                  <Checkbox
+                    id={`url-${url.url}`}
+                    checked={selectedUrls.includes(url.url)}
+                    onCheckedChange={(checked) => handleSelectURL(url.url, checked === true)}
+                  />
+                  <label 
+                    htmlFor={`url-${url.url}`}
+                    className="flex-1 text-sm cursor-pointer truncate"
+                    title={url.url}
+                  >
+                    <div className="flex items-center">
+                      <span className="truncate">{url.url}</span>
+                      {isProcessed && (
+                        <Badge 
+                          variant="outline" 
+                          className="ml-2 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 text-xs"
+                        >
+                          {includeProcessed ? "Reprocess" : "Processed"}
+                        </Badge>
+                      )}
+                    </div>
+                  </label>
+                </div>
+              );
+            })}
+          </ScrollArea>
+          
+          <div className="flex justify-end">
+            <Button 
+              onClick={handleStartProcessing}
+              disabled={selectedUrls.length === 0 || loading}
+            >
+              Process Selected URLs
+            </Button>
+          </div>
+        </div>
+        
+        {/* Load More Button */}
+        {hasMore && (
+          <div className="flex justify-center mt-4">
+            <Button
+              variant="outline"
+              onClick={loadMoreUrls}
+              disabled={loadingMore}
+              className="w-full max-w-[300px]"
+            >
+              {loadingMore ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
+                  Loading...
+                </>
+              ) : (
+                `Load More URLs (${filteredUrls.length} of ${filter ? allUrls.filter(url => url.url.toLowerCase().includes(filter.toLowerCase())).length : allUrls.length})`
+              )}
+            </Button>
+          </div>
+        )}
       </div>
     );
   };
@@ -411,13 +628,19 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
         urls={selectedUrlsWithContent}
         apiKey={apiKey}
         sessionId={sessionId}
-        category={category}
-        language={language}
-        languageVersion={languageVersion}
-        framework={framework}
-        frameworkVersion={frameworkVersion}
-        library={library}
-        libraryVersion={libraryVersion}
+        category={
+          selectedCategories.language 
+            ? DocumentationCategory.LANGUAGE 
+            : selectedCategories.framework 
+              ? DocumentationCategory.FRAMEWORK 
+              : DocumentationCategory.LIBRARY
+        }
+        language={settings.language}
+        languageVersion={settings.languageVersion}
+        framework={settings.framework}
+        frameworkVersion={settings.frameworkVersion}
+        library={settings.library}
+        libraryVersion={settings.libraryVersion}
         onComplete={handleProcessingComplete}
         onCancel={handleProcessingCancel}
       />
@@ -443,24 +666,60 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="category-language"
-                    checked={category === DocumentationCategory.LANGUAGE}
-                    onCheckedChange={() => setCategory(DocumentationCategory.LANGUAGE)}
+                    checked={selectedCategories.language}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        // Radio button behavior - only one can be selected
+                        setSelectedCategories({
+                          language: true,
+                          framework: false,
+                          library: false
+                        });
+                      } else {
+                        // Allow unchecking
+                        setSelectedCategories(prev => ({ ...prev, language: false }));
+                      }
+                    }}
                   />
                   <label htmlFor="category-language">Language</label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="category-framework"
-                    checked={category === DocumentationCategory.FRAMEWORK}
-                    onCheckedChange={() => setCategory(DocumentationCategory.FRAMEWORK)}
+                    checked={selectedCategories.framework}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        // Radio button behavior - only one can be selected
+                        setSelectedCategories({
+                          language: false,
+                          framework: true,
+                          library: false
+                        });
+                      } else {
+                        // Allow unchecking
+                        setSelectedCategories(prev => ({ ...prev, framework: false }));
+                      }
+                    }}
                   />
                   <label htmlFor="category-framework">Framework</label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="category-library"
-                    checked={category === DocumentationCategory.LIBRARY}
-                    onCheckedChange={() => setCategory(DocumentationCategory.LIBRARY)}
+                    checked={selectedCategories.library}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        // Radio button behavior - only one can be selected
+                        setSelectedCategories({
+                          language: false,
+                          framework: false,
+                          library: true
+                        });
+                      } else {
+                        // Allow unchecking
+                        setSelectedCategories(prev => ({ ...prev, library: false }));
+                      }
+                    }}
                   />
                   <label htmlFor="category-library">Library</label>
                 </div>
@@ -472,8 +731,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="language">Language</Label>
                 <Input 
                   id="language" 
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
+                  value={settings.language}
+                  onChange={(e) => setSettings(prev => ({ ...prev, language: e.target.value }))}
                   placeholder="Enter programming language"
                 />
               </div>
@@ -481,8 +740,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="languageVersion">Language Version</Label>
                 <Input 
                   id="languageVersion" 
-                  value={languageVersion}
-                  onChange={(e) => setLanguageVersion(e.target.value)}
+                  value={settings.languageVersion}
+                  onChange={(e) => setSettings(prev => ({ ...prev, languageVersion: e.target.value }))}
                   placeholder="Enter language version"
                 />
               </div>
@@ -493,8 +752,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="framework">Framework</Label>
                 <Input 
                   id="framework" 
-                  value={framework}
-                  onChange={(e) => setFramework(e.target.value)}
+                  value={settings.framework}
+                  onChange={(e) => setSettings(prev => ({ ...prev, framework: e.target.value }))}
                   placeholder="Enter framework name"
                 />
               </div>
@@ -502,8 +761,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="frameworkVersion">Framework Version</Label>
                 <Input 
                   id="frameworkVersion" 
-                  value={frameworkVersion}
-                  onChange={(e) => setFrameworkVersion(e.target.value)}
+                  value={settings.frameworkVersion}
+                  onChange={(e) => setSettings(prev => ({ ...prev, frameworkVersion: e.target.value }))}
                   placeholder="Enter framework version"
                 />
               </div>
@@ -514,8 +773,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="library">Library</Label>
                 <Input 
                   id="library" 
-                  value={library}
-                  onChange={(e) => setLibrary(e.target.value)}
+                  value={settings.library || ""}
+                  onChange={(e) => handleInputChange('library', e.target.value)}
                   placeholder="Enter library name"
                 />
               </div>
@@ -523,8 +782,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="libraryVersion">Library Version</Label>
                 <Input 
                   id="libraryVersion" 
-                  value={libraryVersion}
-                  onChange={(e) => setLibraryVersion(e.target.value)}
+                  value={settings.libraryVersion || ""}
+                  onChange={(e) => handleInputChange('libraryVersion', e.target.value)}
                   placeholder="Enter library version"
                 />
               </div>
@@ -533,9 +792,9 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
             <div className="flex justify-end">
               <Button 
                 onClick={saveAiProcessingSettings}
-                disabled={saving}
+                disabled={loading}
               >
-                {saving ? "Saving..." : "Save Settings"}
+                {loading ? "Saving..." : "Save Settings"}
               </Button>
             </div>
           </div>
@@ -546,66 +805,16 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
               <TabsTrigger value="to-process">URLs to Process</TabsTrigger>
               <TabsTrigger value="processed" className="relative">
                 Processed URLs
-                {processedUrls.length > 0 && (
+                {customProcessedUrls.length > 0 && (
                   <Badge variant="secondary" className="ml-2">
-                    {processedUrls.length}
+                    {customProcessedUrls.length}
                   </Badge>
                 )}
               </TabsTrigger>
             </TabsList>
             
             <TabsContent value="to-process" className="space-y-4">
-              <div className="flex flex-wrap justify-between items-center gap-2">
-                <div className="flex items-center space-x-2">
-                  <Switch 
-                    id="include-processed" 
-                    checked={includeProcessed}
-                    onCheckedChange={handleToggleIncludeProcessed}
-                  />
-                  <Label htmlFor="include-processed">Include already processed URLs</Label>
-                </div>
-                
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={handleSelectAll}
-                  disabled={filteredUrls.length === 0}
-                >
-                  {selectAll ? "Deselect All" : "Select All"}
-                </Button>
-              </div>
-              
-              <Input
-                placeholder="Filter URLs..."
-                value={filter}
-                onChange={handleFilterChange}
-                className="mb-2"
-              />
-              
-              <div className="flex flex-wrap justify-between text-sm text-muted-foreground mb-2 gap-2">
-                <div className="flex gap-3">
-                  <span>Total: {filteredUrls.length} URLs</span>
-                  {includeProcessed && (
-                    <span>
-                      Processed: {filteredUrls.filter(url => url.status === "processed" || processedUrls.includes(url.url)).length}
-                    </span>
-                  )}
-                </div>
-                <span>Selected: {selectedUrls.length}</span>
-              </div>
-              
-              <ScrollArea className="h-[600px] border rounded-md">
-                {renderURLList()}
-              </ScrollArea>
-              
-              <div className="flex justify-end">
-                <Button 
-                  onClick={handleStartProcessing}
-                  disabled={selectedUrls.length === 0 || loading}
-                >
-                  Process Selected URLs
-                </Button>
-              </div>
+              {renderURLList()}
             </TabsContent>
             
             <TabsContent value="processed" className="space-y-4">
@@ -619,7 +828,7 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 />
               ) : (
                 <>
-                  {processedUrls.length === 0 ? (
+                  {customProcessedUrls.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       No URLs have been processed yet
                     </div>
@@ -632,7 +841,7 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                       
                       <ScrollArea className="h-[500px] border rounded-md p-3">
                         <div className="space-y-3">
-                          {processedUrls.map((url) => (
+                          {customProcessedUrls.map((url) => (
                             <PreviewSnippets 
                               key={url} 
                               url={url} 
@@ -670,24 +879,60 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="category-language"
-                    checked={category === DocumentationCategory.LANGUAGE}
-                    onCheckedChange={() => setCategory(DocumentationCategory.LANGUAGE)}
+                    checked={selectedCategories.language}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        // Radio button behavior - only one can be selected
+                        setSelectedCategories({
+                          language: true,
+                          framework: false,
+                          library: false
+                        });
+                      } else {
+                        // Allow unchecking
+                        setSelectedCategories(prev => ({ ...prev, language: false }));
+                      }
+                    }}
                   />
                   <label htmlFor="category-language">Language</label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="category-framework"
-                    checked={category === DocumentationCategory.FRAMEWORK}
-                    onCheckedChange={() => setCategory(DocumentationCategory.FRAMEWORK)}
+                    checked={selectedCategories.framework}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        // Radio button behavior - only one can be selected
+                        setSelectedCategories({
+                          language: false,
+                          framework: true,
+                          library: false
+                        });
+                      } else {
+                        // Allow unchecking
+                        setSelectedCategories(prev => ({ ...prev, framework: false }));
+                      }
+                    }}
                   />
                   <label htmlFor="category-framework">Framework</label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="category-library"
-                    checked={category === DocumentationCategory.LIBRARY}
-                    onCheckedChange={() => setCategory(DocumentationCategory.LIBRARY)}
+                    checked={selectedCategories.library}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        // Radio button behavior - only one can be selected
+                        setSelectedCategories({
+                          language: false,
+                          framework: false,
+                          library: true
+                        });
+                      } else {
+                        // Allow unchecking
+                        setSelectedCategories(prev => ({ ...prev, library: false }));
+                      }
+                    }}
                   />
                   <label htmlFor="category-library">Library</label>
                 </div>
@@ -699,8 +944,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="language">Language</Label>
                 <Input 
                   id="language" 
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
+                  value={settings.language}
+                  onChange={(e) => setSettings(prev => ({ ...prev, language: e.target.value }))}
                   placeholder="Enter programming language"
                 />
               </div>
@@ -708,8 +953,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="languageVersion">Language Version</Label>
                 <Input 
                   id="languageVersion" 
-                  value={languageVersion}
-                  onChange={(e) => setLanguageVersion(e.target.value)}
+                  value={settings.languageVersion}
+                  onChange={(e) => setSettings(prev => ({ ...prev, languageVersion: e.target.value }))}
                   placeholder="Enter language version"
                 />
               </div>
@@ -720,8 +965,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="framework">Framework</Label>
                 <Input 
                   id="framework" 
-                  value={framework}
-                  onChange={(e) => setFramework(e.target.value)}
+                  value={settings.framework}
+                  onChange={(e) => setSettings(prev => ({ ...prev, framework: e.target.value }))}
                   placeholder="Enter framework name"
                 />
               </div>
@@ -729,8 +974,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="frameworkVersion">Framework Version</Label>
                 <Input 
                   id="frameworkVersion" 
-                  value={frameworkVersion}
-                  onChange={(e) => setFrameworkVersion(e.target.value)}
+                  value={settings.frameworkVersion}
+                  onChange={(e) => setSettings(prev => ({ ...prev, frameworkVersion: e.target.value }))}
                   placeholder="Enter framework version"
                 />
               </div>
@@ -741,8 +986,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="library">Library</Label>
                 <Input 
                   id="library" 
-                  value={library}
-                  onChange={(e) => setLibrary(e.target.value)}
+                  value={settings.library || ""}
+                  onChange={(e) => handleInputChange('library', e.target.value)}
                   placeholder="Enter library name"
                 />
               </div>
@@ -750,8 +995,8 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
                 <Label htmlFor="libraryVersion">Library Version</Label>
                 <Input 
                   id="libraryVersion" 
-                  value={libraryVersion}
-                  onChange={(e) => setLibraryVersion(e.target.value)}
+                  value={settings.libraryVersion || ""}
+                  onChange={(e) => handleInputChange('libraryVersion', e.target.value)}
                   placeholder="Enter library version"
                 />
               </div>
@@ -760,9 +1005,9 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
             <div className="flex justify-end">
               <Button 
                 onClick={saveAiProcessingSettings}
-                disabled={saving}
+                disabled={loading}
               >
-                {saving ? "Saving..." : "Save Settings"}
+                {loading ? "Saving..." : "Save Settings"}
               </Button>
             </div>
           </div>
@@ -789,7 +1034,7 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
             <div className="flex justify-between text-sm text-muted-foreground mb-2">
               <span>Total: {filteredUrls.length} URLs</span>
               <span>Selected: {selectedUrls.length}</span>
-              <span>Already Processed: {processedUrls.length}</span>
+              <span>Already Processed: {customProcessedUrls.length}</span>
             </div>
             
             <ScrollArea className="h-[600px] border rounded-md">

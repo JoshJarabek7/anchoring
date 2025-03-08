@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 
 import { ProcessingStatus, DocumentSource, processBatch, TechDetails } from "@/lib/pipeline";
@@ -13,7 +12,7 @@ import { ChromaClient } from "@/lib/chroma-client";
 import ProcessingOptions from "./ProcessingOptions";
 
 interface ProcessingPipelineProps {
-  urls: { id: number; url: string; html?: string }[];
+  urls: { id: number; url: string; html?: string; markdown?: string }[];
   apiKey: string;
   sessionId: number;
   category: DocumentationCategory;
@@ -103,21 +102,21 @@ export default function ProcessingPipeline({
       return;
     }
 
-    // Filter URLs that have HTML content
+    // Filter URLs that have markdown content
     const sourcesToProcess: DocumentSource[] = urls
-      .filter(url => url.html)
+      .filter(url => url.markdown)
       .map(url => ({
         url: url.url,
-        html: url.html!,
+        markdown: url.markdown!,
         id: url.id
       }));
 
-    console.log(`Found ${sourcesToProcess.length} URLs with HTML content to process`);
+    console.log(`Found ${sourcesToProcess.length} URLs with markdown content to process`);
     console.log("URLs to process:", sourcesToProcess.map(s => s.url));
 
     if (sourcesToProcess.length === 0) {
-      console.error("ERROR: No URLs with HTML content to process");
-      toast.error("No URLs with HTML content to process");
+      console.error("ERROR: No URLs with markdown content to process");
+      toast.error("No URLs with markdown content to process");
       return;
     }
 

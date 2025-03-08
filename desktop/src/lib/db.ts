@@ -226,6 +226,7 @@ export interface FullDocumentationSnippet {
   content: string;
   concepts?: string[];
   created_at?: string;
+  score?: number; // Similarity score from vector search
 }
 
 // Simplified documentation snippet for SQLite storage (reference table)
@@ -747,6 +748,133 @@ export const saveUserSettings = async (settings: UserSettings) => {
   }
 };
 
+export interface ProcessingSettings {
+  session_id: number;
+  language?: string;
+  language_version?: string;
+  framework?: string;
+  framework_version?: string;
+  library?: string;
+  library_version?: string;
+  category?: DocumentationCategory;
+}
+
+// Get processing settings for a specific session
+export const getProcessingSettings = async (sessionId: number): Promise<ProcessingSettings | null> => {
+  const dbConn = await initDB();
+  console.log(`Fetching processing settings for session ${sessionId}`);
+  
+  try {
+    // First check if the settings table exists
+    const tableExists = await dbConn.select<{name: string}[]>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='processing_settings'"
+    );
+    
+    // If the table doesn't exist, create it
+    if (tableExists.length === 0) {
+      console.log("Creating processing_settings table");
+      await dbConn.execute(`
+        CREATE TABLE IF NOT EXISTS processing_settings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER NOT NULL UNIQUE,
+          language TEXT,
+          language_version TEXT,
+          framework TEXT,
+          framework_version TEXT,
+          library TEXT,
+          library_version TEXT,
+          category TEXT,
+          FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE
+        )
+      `);
+    } else {
+      // Check if the category column exists
+      const columns = await dbConn.select<{name: string, type: string}[]>(
+        "PRAGMA table_info(processing_settings)"
+      );
+      const columnExists = columns.some((col) => col.name === 'category');
+      
+      // Add the column if it doesn't exist
+      if (!columnExists) {
+        console.log("Adding category column to processing_settings table");
+        await dbConn.execute(
+          "ALTER TABLE processing_settings ADD COLUMN category TEXT"
+        );
+      }
+    }
+    
+    // Query the settings for this session
+    const result = await dbConn.select<ProcessingSettings[]>(
+      'SELECT * FROM processing_settings WHERE session_id = ?',
+      [sessionId]
+    );
+    
+    if (result.length === 0) {
+      console.log(`No processing settings found for session ${sessionId}`);
+      return null;
+    }
+    
+    console.log(`Found processing settings for session ${sessionId}:`, result[0]);
+    return result[0];
+  } catch (error) {
+    console.error(`Error fetching processing settings:`, error);
+    return null;
+  }
+};
+
+// Save processing settings for a specific session
+export const saveProcessingSettings = async (settings: ProcessingSettings): Promise<void> => {
+  const dbConn = await initDB();
+  console.log(`Saving processing settings for session ${settings.session_id}:`, settings);
+  
+  try {
+    // Check if settings for this session already exist
+    const existing = await dbConn.select<ProcessingSettings[]>(
+      'SELECT id FROM processing_settings WHERE session_id = ?',
+      [settings.session_id]
+    );
+    
+    if (existing.length === 0) {
+      // Create new settings
+      console.log(`Creating new processing settings for session ${settings.session_id}`);
+      await dbConn.execute(
+        'INSERT INTO processing_settings (session_id, language, language_version, framework, framework_version, library, library_version, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          settings.session_id,
+          settings.language || null,
+          settings.language_version || null,
+          settings.framework || null,
+          settings.framework_version || null,
+          settings.library || null,
+          settings.library_version || null,
+          settings.category || null
+        ]
+      );
+    } else {
+      // Update existing settings
+      console.log(`Updating processing settings for session ${settings.session_id}`);
+      await dbConn.execute(
+        'UPDATE processing_settings SET language = ?, language_version = ?, framework = ?, framework_version = ?, library = ?, library_version = ?, category = ? WHERE session_id = ?',
+        [
+          settings.language || null,
+          settings.language_version || null,
+          settings.framework || null,
+          settings.framework_version || null,
+          settings.library || null,
+          settings.library_version || null,
+          settings.category || null,
+          settings.session_id
+        ]
+      );
+    }
+    
+    console.log(`Successfully saved processing settings for session ${settings.session_id}`);
+  } catch (error) {
+    console.error(`Error saving processing settings:`, error);
+    throw error;
+  }
+};
+
 export const getUserSettings = async () => {
   const dbConn = await initDB();
   console.log("Fetching user settings from database");
@@ -760,12 +888,12 @@ export const getUserSettings = async () => {
     const defaultSettings = {
       openai_key: '',
       chroma_path: '',
-      language: '',
-      language_version: '',
-      framework: '',
-      framework_version: '',
-      library: '',
-      library_version: ''
+      language: null,
+      language_version: null,
+      framework: null,
+      framework_version: null,
+      library: null,
+      library_version: null
     };
     console.log("No user settings found, returning defaults:", defaultSettings);
     return defaultSettings;

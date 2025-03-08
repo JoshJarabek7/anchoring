@@ -1,4 +1,4 @@
-import { toast } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 import { FullDocumentationSnippet, DocumentationCategory, updateURLCleanedMarkdown, updateURLStatus } from './db';
 import { convertToMarkdown } from './crawler';
 import { processMarkdownWithAI } from './openai';
@@ -10,7 +10,7 @@ import { ChromaClient } from './chroma-client';
  */
 export interface DocumentSource {
   url: string;
-  html: string;
+  markdown: string;
   id?: number; // Add optional id field to allow database updates
 }
 
@@ -58,22 +58,14 @@ export async function processDocument(
   urlId?: number
 ): Promise<FullDocumentationSnippet[]> {
   try {
-    // Step 1: Convert HTML to Markdown
-    onStatusChange(ProcessingStatus.CONVERTING);
-    console.log("Starting HTML to Markdown conversion");
-    
-    // Ensure we're passing a proper string to the HTML conversion
-    const htmlString = typeof source.html === 'string' ? source.html : JSON.stringify(source.html);
-    const markdown = await convertToMarkdown(htmlString);
-    console.log("Finished HTML to Markdown conversion");
-    
-    // Step 2: Clean up markdown with AI
+    // We skip the HTML conversion step entirely - only work with markdown
+    // Go directly to cleaning up the markdown with AI
     onStatusChange(ProcessingStatus.CLEANING);
     console.log("Starting AI cleanup of Markdown");
     
     try {
       // Use the AI processing directly - no need for additional timeout
-      const cleanedMarkdown = await processMarkdownWithAI(markdown, apiKey, {
+      const cleanedMarkdown = await processMarkdownWithAI(source.markdown, apiKey, {
         model: options.cleanupModel,
         maxTokens: options.maxTokens,
         temperature: options.temperature
@@ -135,7 +127,7 @@ export async function processDocument(
       onStatusChange(ProcessingStatus.CHUNKING);
       console.log("Processing original Markdown into snippets");
       const snippets = await processMarkdownIntoSnippets(
-        markdown,  // Use original markdown as fallback
+        source.markdown,  // Use original markdown as fallback
         apiKey,
         source.url,
         techDetails.category,
@@ -228,16 +220,18 @@ export async function processBatch(
         try {
           // Each document has its own progress through several phases
           // Phase weights as percentages of document processing
-          const PHASE_WEIGHTS = {
+          const PHASE_WEIGHTS: Record<ProcessingStatus, number> = {
             [ProcessingStatus.CONVERTING]: 0.1,  // 10% for HTML conversion
             [ProcessingStatus.CLEANING]: 0.3,    // 30% for AI cleaning 
             [ProcessingStatus.CHUNKING]: 0.2,    // 20% for chunking
-            [ProcessingStatus.EMBEDDING]: 0.4    // 40% for embedding
+            [ProcessingStatus.EMBEDDING]: 0.4,   // 40% for embedding
+            [ProcessingStatus.IDLE]: 0,
+            [ProcessingStatus.COMPLETE]: 1.0,
+            [ProcessingStatus.ERROR]: 0
           };
           
           let currentPhase = ProcessingStatus.IDLE;
-          let currentPhaseProgress = 0;
-          
+                  
           // Calculate weighted progress across all phases
           const calculateDocumentProgress = (status: ProcessingStatus, phaseProgress = 1.0) => {
             // Default phase progress to 100% if not specified
@@ -269,7 +263,7 @@ export async function processBatch(
             (status, phaseProgress) => {
               // Track current phase and progress
               currentPhase = status;
-              currentPhaseProgress = phaseProgress || 1.0;
+              // Track phase progress in the callback
               
               // Calculate document-level progress
               const documentProgress = calculateDocumentProgress(status, phaseProgress);

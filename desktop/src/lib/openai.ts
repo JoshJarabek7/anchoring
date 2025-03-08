@@ -1,4 +1,3 @@
-import { encodingForModel } from "js-tiktoken";
 import OpenAI from "openai";
 import { toast } from "sonner";
 
@@ -195,7 +194,7 @@ export const processMarkdownWithAI = async (
       const startTime = performance.now();
       
       // Add progress notification
-      const processingToast = toast.loading("Processing markdown with AI...", {
+      toast.loading("Processing markdown with AI...", {
         id: "markdown-processing",
         duration: Infinity, // Don't auto-dismiss
       });
@@ -401,7 +400,6 @@ export const generateEmbedding = async (
 export const processDocumentForEmbedding = async (
   document: string,
   apiKey: string,
-  maxTokens: number = 8000, // Optimal for embedding models
   dimensions: number = 3072 // Default to 3072 dimensions to match MCP server
 ): Promise<number[]> => {
   // Chunk text using our Rust implementation with optimal settings for embeddings

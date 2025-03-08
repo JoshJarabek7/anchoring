@@ -19,15 +19,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -79,7 +71,7 @@ export default function ProcessingOptions({
             <FormField
               control={form.control}
               name="model"
-              render={({ field }) => (
+              render={() => (
                 <FormItem>
                   <FormLabel>Model</FormLabel>
                   <div className="p-2 border rounded-md bg-muted/20">
@@ -96,7 +88,7 @@ export default function ProcessingOptions({
             <FormField
               control={form.control}
               name="temperature"
-              render={({ field }) => (
+              render={({ field }) => ( // field is used for onChange
                 <FormItem>
                   <FormLabel>Temperature: {temperature.toFixed(1)}</FormLabel>
                   <FormControl>
