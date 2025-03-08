@@ -1,0 +1,230 @@
+import { z } from 'zod';
+import { chunkTextRecursively, initializeOpenAI } from './openai';
+import { FullDocumentationSnippet, DocumentationCategory } from './db';
+import { zodResponseFormat } from 'openai/helpers/zod';
+
+/**
+ * Schema for a documentation snippet from structured output
+ */
+const DocumentSnippetSchema = z.object({
+  title: z.string().describe("The title of the documentation snippet"),
+  description: z.string().describe("A brief summary of what this snippet covers"),
+  content: z.string().describe("The actual documentation content"),
+  concepts: z.array(z.string()).describe("Key concepts covered in this snippet")
+});
+
+/**
+ * Schema for the full processor output
+ */
+const ProcessorOutputSchema = z.object({
+  snippets: z.array(DocumentSnippetSchema),
+});
+
+/**
+ * Schema for concept extraction
+ */
+const ConceptsSchema = z.object({
+  concepts: z.array(z.string()).describe("Key technical concepts extracted from the text")
+});
+
+export type DocumentSnippet = z.infer<typeof DocumentSnippetSchema>;
+export type ProcessorOutput = z.infer<typeof ProcessorOutputSchema>;
+
+/**
+ * Process cleaned markdown into documentation snippets using GPT-4o-mini
+ */
+export async function processMarkdownIntoSnippets(
+  markdown: string,
+  apiKey: string,
+  sourceUrl: string,
+  category: DocumentationCategory,
+  technicalInfo: {
+    language?: string;
+    language_version?: string;
+    framework?: string;
+    framework_version?: string;
+    library?: string;
+    library_version?: string;
+  }
+): Promise<FullDocumentationSnippet[]> {
+  console.log("================================");
+  console.log("PROCESSING MARKDOWN INTO SNIPPETS");
+  console.log("================================");
+  console.log(`Source URL: ${sourceUrl}`);
+  console.log(`Category: ${category}`);
+  console.log(`Technical info:`, technicalInfo);
+  console.log(`Input markdown length: ${markdown.length} characters`);
+  
+  const startTime = performance.now();
+  
+  try {
+    // Initialize OpenAI client
+    console.log("Initializing OpenAI client");
+    const openai = initializeOpenAI(apiKey);
+
+    // First chunk the markdown to ensure it fits within token limits
+    console.log("Chunking markdown for processing");
+    // Set chunk size to 100,000 to better utilize GPT-4o-mini's 128k context window, no overlap needed with semantic chunking
+    // First ensure markdown is a proper string
+    if (!markdown || typeof markdown !== 'string') {
+      console.error("Invalid markdown received:", markdown);
+      throw new Error("Invalid markdown format: not a string");
+    }
+    
+    const chunks = await chunkTextRecursively(markdown, 100000, "gpt-4o-mini", 0, "markdown");
+    console.log(`Markdown split into ${chunks.length} chunks`);
+    
+    const allSnippets: FullDocumentationSnippet[] = [];
+    
+    // Process chunks in parallel with concurrency control
+    const MAX_CONCURRENT = 3; // Process 3 chunks at a time
+    
+    for (let i = 0; i < chunks.length; i += MAX_CONCURRENT) {
+      const batchChunks = chunks.slice(i, i + MAX_CONCURRENT);
+      const batchStartTime = performance.now();
+      
+      console.log(`Processing batch of ${batchChunks.length} chunks (${i+1}-${i+Math.min(i+MAX_CONCURRENT, chunks.length)}/${chunks.length})`);
+      
+      // Create an array of promises for processing each chunk
+      const chunkPromises = batchChunks.map((chunk, batchIndex) => {
+        const chunkIndex = i + batchIndex;
+        const chunkHeader = `Part ${chunkIndex+1}/${chunks.length}: `;
+        
+        return (async () => {
+          console.log(`Processing chunk ${chunkIndex+1}/${chunks.length} (${chunk.length} characters)`);
+          const chunkStartTime = performance.now();
+          
+          try {
+            // Use OpenAI SDK with Zod schema for structured output
+            const completion = await openai.beta.chat.completions.parse({
+              model: "gpt-4o-mini",
+              messages: [
+                {
+                  role: "system",
+                  content: "You are a documentation processor that extracts meaningful, self-contained documentation snippets from markdown content. For each logical section, create a separate snippet with a descriptive title, a brief summary description (1-2 sentences), the content itself, and a list of key concepts covered."
+                },
+                {
+                  role: "user",
+                  content: `${chunkHeader}Split this documentation markdown into logical, self-contained snippets. Each snippet should have a clear title, brief description (1-2 sentences), content, and concepts covered:\n\n${chunk}`
+                }
+              ],
+              temperature: 0.2,
+              response_format: zodResponseFormat(ProcessorOutputSchema, "processor_output"),
+            });
+            
+            // Get the parsed snippets directly from the parsed response
+            const validatedOutput = completion.choices[0].message.parsed;
+            
+            if (!validatedOutput || !validatedOutput.snippets) {
+              console.error(`❌ Chunk ${chunkIndex+1}/${chunks.length}: Invalid or empty response from OpenAI`);
+              return [];
+            }
+            
+            console.log(`✅ Chunk ${chunkIndex+1}/${chunks.length}: Received ${validatedOutput.snippets.length} snippets from OpenAI`);
+            
+            // Convert to our internal DocumentationSnippet format
+            const snippets = validatedOutput.snippets.map((snippet, snippetIndex) => {
+              // Create a unique ID for each snippet
+              const snippetId = `${sourceUrl.replace(/[^a-zA-Z0-9]/g, '_')}_${chunkIndex}_${snippetIndex}`;
+              
+              if (!snippet.title || !snippet.description || !snippet.content) {
+                console.error(`❌ Snippet ${chunkIndex}_${snippetIndex} has missing required fields`);
+                return null;
+              }
+              
+              return {
+                category,
+                language: technicalInfo.language,
+                language_version: technicalInfo.language_version,
+                framework: technicalInfo.framework,
+                framework_version: technicalInfo.framework_version,
+                library: technicalInfo.library,
+                library_version: technicalInfo.library_version,
+                snippet_id: snippetId,
+                source_url: sourceUrl,
+                title: snippet.title,
+                description: snippet.description,
+                content: snippet.content,
+                concepts: snippet.concepts || []
+              };
+            }).filter((snippet): snippet is FullDocumentationSnippet => snippet !== null);
+            
+            const chunkEndTime = performance.now();
+            console.log(`✅ Processed chunk ${chunkIndex+1}/${chunks.length} in ${((chunkEndTime - chunkStartTime) / 1000).toFixed(2)}s`);
+            
+            return snippets;
+          } catch (error) {
+            console.error(`❌ Error processing chunk ${chunkIndex+1}/${chunks.length}:`, error);
+            return [];
+          }
+        })();
+      });
+      
+      // Wait for all promises in this batch to complete
+      const batchResults = await Promise.all(chunkPromises);
+      
+      // Flatten and add all snippets from this batch
+      const batchSnippets = batchResults.flat();
+      allSnippets.push(...batchSnippets);
+      
+      const batchEndTime = performance.now();
+      console.log(`✅ Processed batch ${Math.floor(i/MAX_CONCURRENT) + 1} in ${((batchEndTime - batchStartTime) / 1000).toFixed(2)}s, got ${batchSnippets.length} snippets`);
+    }
+    
+    const endTime = performance.now();
+    console.log(`✅ Processed all ${chunks.length} chunks in ${((endTime - startTime) / 1000).toFixed(2)}s`);
+    console.log(`Total snippets created: ${allSnippets.length}`);
+    
+    if (allSnippets.length === 0) {
+      console.error("❌ No snippets were created");
+      throw new Error("No snippets were created from the markdown content");
+    }
+    
+    return allSnippets;
+  } catch (error) {
+    const endTime = performance.now();
+    console.error(`❌ Error processing markdown into snippets in ${((endTime - startTime) / 1000).toFixed(2)}ms:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Extract key concepts from a given text
+ */
+export async function extractConcepts(
+  text: string,
+  apiKey: string
+): Promise<string[]> {
+  try {
+    // Initialize OpenAI client
+    const openai = initializeOpenAI(apiKey);
+
+    // Use OpenAI SDK with Zod schema for structured output
+    const completion = await openai.beta.chat.completions.parse({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You extract key technical concepts from documentation text. Return only a list of strings, with each string being a concept mentioned in the text."
+        },
+        {
+          role: "user",
+          content: `Extract all the key technical concepts from this text:\n\n${text}`
+        }
+      ],
+      temperature: 0.2,
+      response_format: zodResponseFormat(ConceptsSchema, "concepts_extraction"),
+    });
+
+    // Get concepts directly from the parsed response
+    if (!completion.choices[0]?.message?.parsed) {
+      console.warn("Invalid or empty response from OpenAI");
+      return [];
+    }
+    
+    return completion.choices[0].message.parsed.concepts || [];
+  } catch (error) {
+    console.error("Error extracting concepts:", error);
+    return [];
+  }
+}
