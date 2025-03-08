@@ -150,7 +150,15 @@ export class ChromaClient {
             this.collection = await this.client.createCollection({
               name: COLLECTION_NAME,
               metadata: { 
-                "description": "Documentation snippets for Anchoring project" 
+                "description": "Documentation snippets for Anchoring project",
+                "hnsw:space": "cosine",           // Cosine distance for text embeddings
+                "hnsw:construction_ef": 1000,     // Extremely high for maximum index quality (default: 100)
+                "hnsw:M": 128,                    // Very high connectivity (default: 16)
+                "hnsw:search_ef": 500,            // Exhaustive search exploration (default: 10)
+                "hnsw:num_threads": 16,           // High parallelism for construction
+                "hnsw:resize_factor": 1.2,        // Standard resize factor
+                "hnsw:batch_size": 500,           // Larger batch size for better indexing
+                "hnsw:sync_threshold": 2000       // Higher threshold for fewer disk syncs
               },
               embeddingFunction: customEmbeddingFunction
             });
@@ -163,7 +171,15 @@ export class ChromaClient {
             this.collection = await this.client.createCollection({
               name: COLLECTION_NAME,
               metadata: { 
-                "description": "Documentation snippets for Anchoring project" 
+                "description": "Documentation snippets for Anchoring project",
+                "hnsw:space": "cosine",           // Cosine distance for text embeddings
+                "hnsw:construction_ef": 1000,     // Extremely high for maximum index quality (default: 100)
+                "hnsw:M": 128,                    // Very high connectivity (default: 16)
+                "hnsw:search_ef": 500,            // Exhaustive search exploration (default: 10)
+                "hnsw:num_threads": 16,           // High parallelism for construction
+                "hnsw:resize_factor": 1.2,        // Standard resize factor
+                "hnsw:batch_size": 500,           // Larger batch size for better indexing
+                "hnsw:sync_threshold": 2000       // Higher threshold for fewer disk syncs
               }
             });
             
@@ -512,9 +528,11 @@ export class ChromaClient {
           const id = results.ids[0][i];
           const metadata = results.metadatas[0][i];
           const content = results.documents[0][i];
-          // Get the similarity score if available (1.0 - distance)
+          // Get the similarity score if available
+          // For cosine distance, convert from 0-2 range to 0-1 range
+          // Where 0 distance → 1.0 score, 2 distance → 0.0 score
           const score = results.distances && results.distances[0] ? 
-            1.0 - results.distances[0][i] : 0.5; // default score if no distance
+            Math.max(0, 1.0 - (results.distances[0][i] / 2.0)) : 0.5; // default score if no distance
           
           console.log(`Result ${i+1}: ID=${id}, Score=${score.toFixed(4)}, Title=${metadata.title}`);
           
