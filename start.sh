@@ -91,6 +91,8 @@ if ! container_running "chroma-server"; then
   docker-compose up -d --remove-orphans
   cd "${SCRIPT_DIR}"
   echo "ChromaDB container started."
+  echo "Waiting for ChromaDB to be ready..."
+  sleep 1 # Wait for container to start
 else
   echo "ChromaDB container is already running."
 fi
