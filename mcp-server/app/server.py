@@ -23,6 +23,10 @@ from semantic_text_splitter import TextSplitter
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP, Context
 
+from .vector_db import DocumentSnippet, DBConnectionConfig, ContextType
+from .vector_db.chroma_provider import ChromaDBProvider
+from .vector_db.pinecone_provider import PineconeProvider
+
 # Load environment variables
 load_dotenv()
 
@@ -39,6 +43,12 @@ class Config:
 
     # OpenAI settings
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+    # Context settings
+    CONTEXT_SOURCE = os.environ.get("CONTEXT_SOURCE", "local")
+    if CONTEXT_SOURCE not in ["local", "shared"]:
+        logger.warning(f"Invalid CONTEXT_SOURCE '{CONTEXT_SOURCE}', defaulting to 'local'")
+        CONTEXT_SOURCE = "local"
 
     # Embedding model settings
     EMBEDDING_MODEL = "text-embedding-3-large"
@@ -172,58 +182,148 @@ class EmbeddingService:
 #------------------------------------------------------------------------------
 
 class DatabaseService:
-    """Service for managing and querying the ChromaDB database."""
+    """Service for managing and querying the vector database."""
 
     def __init__(self, embedding_service: EmbeddingService):
         """Initialize the database service."""
         self.embedding_service = embedding_service
-        self.client = None
-        self.collection = None
+        self._provider = None
+        self._context_type = Config.CONTEXT_SOURCE
 
-    async def initialize_database(self):
-        """Initialize the ChromaDB client and collection."""
-        try:
-            logger.info(f"Initializing ChromaDB client at {Config.CHROMADB_HOST}:{Config.CHROMADB_PORT}")
+    def _create_provider(self, context_type: str):
+        """Create a provider instance based on context type."""
+        if context_type == "local":
+            return ChromaDBProvider()
+        elif context_type == "shared":
+            return PineconeProvider()
+        raise ValueError(f"Invalid context type: {context_type}")
 
-            self.client = await AsyncHttpClient(
+    def _get_config_for_context(self, context_type: str) -> DBConnectionConfig:
+        """Get the appropriate configuration for the context type."""
+        if context_type == "local":
+            return DBConnectionConfig(
+                type="chromadb",
                 host=Config.CHROMADB_HOST,
                 port=Config.CHROMADB_PORT
             )
+        elif context_type == "shared":
+            return DBConnectionConfig(
+                type="pinecone",
+                api_key=os.environ.get("PINECONE_API_KEY"),
+                environment=os.environ.get("PINECONE_ENVIRONMENT"),
+                index_name=os.environ.get("PINECONE_INDEX_NAME")
+            )
+        raise ValueError(f"Invalid context type: {context_type}")
+
+    async def initialize_database(self):
+        """Initialize the vector database client and collection."""
+        try:
+            logger.info(f"Initializing vector database with {self._context_type} context")
+            self._provider = self._create_provider(self._context_type)
+            config = self._get_config_for_context(self._context_type)
+            await self._provider.initialize(config)
             
             logger.info("Creating documentation_snippets collection with maximum accuracy settings")
-            # Create collection without an embedding function, we'll handle embeddings ourselves
-            self.collection = await self.client.get_or_create_collection(
-                name="documentation_snippets",
-                metadata={
-                    "hnsw:space": "cosine",           # Cosine distance for text embeddings
-                    "hnsw:construction_ef": 1000,     # Extremely high for maximum index quality (default: 100)
-                    "hnsw:M": 128,                    # Very high connectivity (default: 16)
-                    "hnsw:search_ef": 500,            # Exhaustive search exploration (default: 10)
-                    "hnsw:num_threads": 16,           # High parallelism for construction
-                    "hnsw:resize_factor": 1.2,        # Standard resize factor
-                    "hnsw:batch_size": 500,           # Larger batch size for better indexing
-                    "hnsw:sync_threshold": 2000       # Higher threshold for fewer disk syncs
-                }
+            await self._provider.get_or_create_collection(
+                name="documentation_snippets"
             )
-            logger.info("ChromaDB collection initialized successfully with maximum accuracy settings")
+            logger.info("Vector database collection initialized successfully")
 
         except Exception as e:
-            logger.error(f"Failed to initialize ChromaDB: {str(e)}\n{traceback.format_exc()}")
+            logger.error(f"Failed to initialize vector database: {str(e)}\n{traceback.format_exc()}")
+
+    async def switch_context(self, context_type: str) -> str:
+        """Switch between local and shared contexts."""
+        if context_type not in ["local", "shared"]:
+            raise ValueError("Invalid context type. Use 'local' or 'shared'")
+
+        if context_type == self._context_type:
+            return f"Already using {context_type} context"
+
+        try:
+            # Create and initialize new provider
+            new_provider = self._create_provider(context_type)
+            config = self._get_config_for_context(context_type)
+            await new_provider.initialize(config)
+            await new_provider.get_or_create_collection("documentation_snippets")
+
+            # If initialization successful, update provider
+            self._provider = new_provider
+            self._context_type = context_type
+            return f"Successfully switched to {context_type} context"
+
+        except Exception as e:
+            error_msg = f"Failed to switch to {context_type} context: {str(e)}"
+            logger.error(f"{error_msg}\n{traceback.format_exc()}")
+            raise RuntimeError(error_msg)
+
+    def get_current_context(self) -> str:
+        """Get the current context type."""
+        return self._context_type
+
+    async def get_sample_contents(self, limit: int = 3) -> str:
+        """Get a sample of contents from the current vector database."""
+        if not self.is_available():
+            return "Vector database is not available"
+
+        try:
+            collection = self._provider.collection
+            if collection is None:
+                return "No collection available"
+
+            # Get a sample of documents
+            results = await collection.get(limit=limit)
+            if not results or not results.get('documents', []):
+                return "No documents found in the current context"
+
+            # Format the results
+            output = f"Sample contents from {self._context_type} context:\n\n"
+            
+            documents = results.get('documents', [])
+            metadatas = results.get('metadatas', [])
+            
+            for i, (doc, meta) in enumerate(zip(documents, metadatas)):
+                # Add metadata header
+                output += f"Document {i+1}:\n"
+                output += "Metadata:\n"
+                for key, value in meta.items():
+                    if value:  # Only show non-empty metadata
+                        output += f"- {key}: {value}\n"
+                
+                # Add content preview (first 200 chars)
+                preview = doc[:200] + "..." if len(doc) > 200 else doc
+                output += f"Content Preview:\n```\n{preview}\n```\n\n"
+
+            return output
+
+        except Exception as e:
+            error_msg = f"Error getting sample contents: {str(e)}"
+            logger.error(f"{error_msg}\n{traceback.format_exc()}")
+            return error_msg
 
     def is_available(self) -> bool:
         """Check if the database is available for use."""
-        return self.collection is not None
+        return self._provider is not None and self._provider.is_available()
     
     def get_unavailable_message(self) -> str:
         """Get a standardized message when the database is unavailable."""
-        return f"""
-        # ChromaDB Not Available
+        context_specific = ""
+        if self._context_type == "local":
+            context_specific = f"""
+            1. Make sure ChromaDB is running on {Config.CHROMADB_HOST}:{Config.CHROMADB_PORT}
+            2. Try reinstalling ChromaDB dependencies: `pip install chromadb --force-reinstall`"""
+        else:
+            context_specific = """
+            1. Check your Pinecone API key and environment settings
+            2. Verify that your Pinecone service is active and accessible"""
 
-        The documentation search tool is currently unavailable because the ChromaDB collection couldn't be initialized.
+        return f"""
+        # Vector Database Not Available
+
+        The documentation search tool is currently unavailable because the vector database collection couldn't be initialized.
 
         ## Possible Solutions
-        1. Make sure ChromaDB is running on {Config.CHROMADB_HOST}:{Config.CHROMADB_PORT}
-        2. Try reinstalling ChromaDB dependencies: `pip install chromadb --force-reinstall`
+        {context_specific}
         3. Check logs for specific error details
 
         Until this issue is resolved, documentation search capabilities will be limited.
@@ -241,7 +341,7 @@ class DocumentationService:
         self.db_service = db_service
     
     def _build_search_filters(self, request: DocumentationQueryRequest) -> dict[str, Any]:
-        """Build ChromaDB search filters based on the request."""
+        """Build vector database search filters based on the request."""
         where_conditions = []
         
         # Base filter for the requested documentation category
@@ -349,7 +449,7 @@ class DocumentationService:
         else:
             where_filter = {}
         
-        # Handle multiple fields in filter appropriately for ChromaDB
+        # Handle multiple fields in filter appropriately for vector database
         if not any(k.startswith('$') for k in where_filter.keys()) and len(where_filter) > 1:
             restructured_filter = {"$and": []}
             for key, value in where_filter.items():
@@ -361,7 +461,7 @@ class DocumentationService:
     async def query_documentation(self, request: DocumentationQueryRequest) -> Any:
         """Query documentation snippets based on the provided request."""
         if not self.db_service.is_available():
-            logger.error("ChromaDB collection is not available")
+            logger.error("Vector database collection is not available")
             return None
         
         logger.info(f"Processing query: {request.query}")
@@ -380,14 +480,14 @@ class DocumentationService:
             logger.info("Generating query embeddings")
             query_embedding = await self.db_service.embedding_service.embed_text(query_text)
             
-            # Execute the query against ChromaDB
-            logger.info("Executing ChromaDB query")
-            collection = self.db_service.collection
+            # Execute the query against vector database
+            logger.info("Executing vector database query")
+            collection = self.db_service._provider.collection
             if collection is None:
                 logger.error("Collection is None, cannot execute query")
                 return None
             
-            # Query using the pre-generated embeddings instead of letting ChromaDB generate them
+            # Query using the pre-generated embeddings instead of letting vector database generate them
             results = await collection.query(
                 query_embeddings=[query_embedding],  # Pass our pre-generated embeddings
                 n_results=request.n_results,
@@ -401,7 +501,7 @@ class DocumentationService:
             return None
     
     def format_results(self, results: dict[str, Any]) -> str:
-        """Format ChromaDB results into a readable markdown format."""
+        """Format vector database results into a readable markdown format."""
         if not results or not results.get('documents') or not results['documents'][0]:
             return "No documentation snippets found matching your query."
         
@@ -455,7 +555,7 @@ class DocumentationService:
     async def list_components(self, category: str) -> list[dict[str, str]]:
         """List all available components for a given category."""
         if not self.db_service.is_available():
-            logger.error("ChromaDB collection is not available")
+            logger.error("Vector database collection is not available")
             return []
         
         if category not in ["language", "framework", "library"]:
@@ -466,7 +566,7 @@ class DocumentationService:
         
         try:
             # Retrieve all documents with matching category
-            collection = self.db_service.collection
+            collection = self.db_service._provider.collection
             if collection is None:
                 logger.error("Collection is None, cannot list components")
                 return []
@@ -628,7 +728,7 @@ class DocumentationEndpoints:
         """
         try:
             # Check if we need to initialize the database connection
-            if self.docs_service.db_service.client is None:
+            if self.docs_service.db_service._provider.client is None:
                 logger.info("Database connection not initialized, initializing now")
                 await self.docs_service.db_service.initialize_database()
                 
@@ -671,7 +771,7 @@ class DocumentationEndpoints:
             if results:
                 return self.docs_service.format_results(results)
             else:
-                return "Error executing query: ChromaDB returned no results"
+                return "Error executing query: Vector database returned no results"
         except Exception as e:
             error_trace = traceback.format_exc()
             logger.error(f"Error in query_documentation: {str(e)}\n{error_trace}")
@@ -691,7 +791,7 @@ class DocumentationEndpoints:
         """
         try:
             # Check if we need to initialize the database connection
-            if self.docs_service.db_service.client is None:
+            if self.docs_service.db_service._provider.client is None:
                 logger.info("Database connection not initialized, initializing now")
                 await self.docs_service.db_service.initialize_database()
                 
@@ -818,6 +918,106 @@ def create_mcp_server() -> FastMCP:
             logger.error(f"Error in list_components tool: {str(e)}\n{error_trace}")
             return f"Error listing components: {str(e)}"
     
+    @mcp.tool(name="show-context-source")
+    async def show_context(ctx: Context | None = None) -> str:
+        """Show the current context source (local or shared)."""
+        try:
+            # Fallback for when context is not available
+            if ctx is None or not hasattr(ctx, 'request_context') or ctx.request_context is None:
+                logger.warning("Context is not fully available, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return f"Current context: {db_service.get_current_context()}"
+            
+            # Access the endpoints from the lifespan context when available
+            app_ctx = ctx.request_context.lifespan_context
+            if not isinstance(app_ctx, AppContext):
+                logger.warning(f"Invalid context type: {type(app_ctx)}, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return f"Current context: {db_service.get_current_context()}"
+            
+            return f"Current context: {app_ctx.db_service.get_current_context()}"
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            logger.error(f"Error in show_context tool: {str(e)}\n{error_trace}")
+            return f"Error showing context: {str(e)}"
+
+    @mcp.tool(name="use-local-context")
+    async def use_local_context(ctx: Context | None = None) -> str:
+        """Switch to local ChromaDB context."""
+        try:
+            # Fallback for when context is not available
+            if ctx is None or not hasattr(ctx, 'request_context') or ctx.request_context is None:
+                logger.warning("Context is not fully available, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return await db_service.switch_context("local")
+            
+            # Access the endpoints from the lifespan context when available
+            app_ctx = ctx.request_context.lifespan_context
+            if not isinstance(app_ctx, AppContext):
+                logger.warning(f"Invalid context type: {type(app_ctx)}, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return await db_service.switch_context("local")
+            
+            return await app_ctx.db_service.switch_context("local")
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            logger.error(f"Error in use_local_context tool: {str(e)}\n{error_trace}")
+            return f"Error switching to local context: {str(e)}"
+
+    @mcp.tool(name="use-shared-context")
+    async def use_shared_context(ctx: Context | None = None) -> str:
+        """Switch to shared Pinecone context."""
+        try:
+            # Fallback for when context is not available
+            if ctx is None or not hasattr(ctx, 'request_context') or ctx.request_context is None:
+                logger.warning("Context is not fully available, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return await db_service.switch_context("shared")
+            
+            # Access the endpoints from the lifespan context when available
+            app_ctx = ctx.request_context.lifespan_context
+            if not isinstance(app_ctx, AppContext):
+                logger.warning(f"Invalid context type: {type(app_ctx)}, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return await db_service.switch_context("shared")
+            
+            return await app_ctx.db_service.switch_context("shared")
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            logger.error(f"Error in use_shared_context tool: {str(e)}\n{error_trace}")
+            return f"Error switching to shared context: {str(e)}"
+
+    @mcp.tool(name="show-context-contents")
+    async def show_contents(ctx: Context | None = None) -> str:
+        """Show a sample of contents from the current vector database context."""
+        try:
+            # Fallback for when context is not available
+            if ctx is None or not hasattr(ctx, 'request_context') or ctx.request_context is None:
+                logger.warning("Context is not fully available, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return await db_service.get_sample_contents()
+            
+            # Access the endpoints from the lifespan context when available
+            app_ctx = ctx.request_context.lifespan_context
+            if not isinstance(app_ctx, AppContext):
+                logger.warning(f"Invalid context type: {type(app_ctx)}, using fallback")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                return await db_service.get_sample_contents()
+            
+            return await app_ctx.db_service.get_sample_contents()
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            logger.error(f"Error in show_contents tool: {str(e)}\n{error_trace}")
+            return f"Error showing context contents: {str(e)}"
+
     logger.info("MCP server initialized with proper lifecycle management")
     return mcp
 
