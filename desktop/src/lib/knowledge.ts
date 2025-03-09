@@ -285,8 +285,8 @@ export async function listDocComponents(category: "language" | "framework" | "li
     // Use provided API key or get it from elsewhere
     const chromaApiKey = apiKey || "";
     if (!chromaApiKey) {
-      console.warn("No API key provided for ChromaDB, using mock data");
-      return getMockComponents(category);
+      console.warn("No API key provided for ChromaDB, returning empty list");
+      return [];
     }
     
     // Initialize ChromaDB client with API key
@@ -308,11 +308,17 @@ export async function listDocComponents(category: "language" | "framework" | "li
       
       // Get components using the correct method
       const components = await chromaClient.getAvailableComponents(dbCategory);
+      
+      if (components.length === 0) {
+        console.log(`No ${category} components found in the database. You may need to crawl and process documentation for this category.`);
+      } else {
+        console.log(`Found ${components.length} ${category} components in the database.`);
+      }
+      
       return components;
     } catch (chromaError) {
-      console.error("Error getting components from ChromaDB:", chromaError);
-      // Fall back to mock data
-      return getMockComponents(category);
+      console.error(`Error getting ${category} components from ChromaDB:`, chromaError);
+      return [];
     }
   } catch (error) {
     console.error(`Failed to list ${category} components:`, error);
@@ -322,23 +328,6 @@ export async function listDocComponents(category: "language" | "framework" | "li
 
 // Helper function to get mock components
 function getMockComponents(category: "language" | "framework" | "library"): Array<{name: string, version: string}> {
-  if (category === "framework") {
-    return [
-      { name: "Tauri", version: "2.3.1" },
-      { name: "React", version: "18.2.0" }
-    ];
-  } else if (category === "language") {
-    return [
-      { name: "TypeScript", version: "5.6.2" },
-      { name: "JavaScript", version: "ES2020" }
-    ];
-  } else if (category === "library") {
-    return [
-      { name: "jQuery", version: "3.7.1" },
-      { name: "Redux", version: "5.0.0" },
-      { name: "lodash", version: "4.17.21" }
-    ];
-  }
-  
+  // Return empty arrays instead of mock data
   return [];
 }
