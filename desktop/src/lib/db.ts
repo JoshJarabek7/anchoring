@@ -1,17 +1,27 @@
 import Database from '@tauri-apps/plugin-sql';
+import { runMigrations } from './migrations';
 
 // Database connection
 let db: Database | null = null;
 
 // Initialize database connection
 export const initDB = async () => {
-  if (!db) {
-    db = await Database.load('sqlite:anchoring.db');
+  if (db) return db;
+  
+  try {
+    db = await Database.load("sqlite:anchoring.db");
+    console.log("Database connection established");
     
-    // Initialize database schema if needed
     await createTables();
+    
+    // Run migrations to handle schema changes
+    await runMigrations(db);
+    
+    return db;
+  } catch (error) {
+    console.error("Error initializing database:", error);
+    throw error;
   }
-  return db;
 };
 
 // Create database tables
@@ -34,7 +44,6 @@ const createTables = async () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         version TEXT,
-        chroma_path TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -69,21 +78,15 @@ const createTables = async () => {
     await dbConn.execute(`
       CREATE TABLE IF NOT EXISTS user_settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        openai_key TEXT
+        openai_key TEXT,
+        language TEXT,
+        language_version TEXT,
+        framework TEXT,
+        framework_version TEXT,
+        library TEXT,
+        library_version TEXT
       )
     `);
-    
-    // Then alter the table to add the chroma_path column if it doesn't exist
-    // This is safer than recreating the table and handles existing databases
-    try {
-      await dbConn.execute(`
-        ALTER TABLE user_settings ADD COLUMN chroma_path TEXT;
-      `);
-      console.log("Added chroma_path column to user_settings table");
-    } catch (error) {
-      // Column might already exist, which is fine
-      console.log("Column chroma_path might already exist in user_settings table");
-    }
     
     // Add AI processing columns if they don't exist
     try {
@@ -154,7 +157,6 @@ export interface CrawlSession {
   id?: number;
   title: string;
   version?: string;
-  chroma_path: string;
   created_at?: string;
 }
 
@@ -184,7 +186,6 @@ export interface CrawlSettings {
 export interface UserSettings {
   id?: number;
   openai_key?: string;
-  chroma_path?: string;
   // AI processing details
   language?: string;
   language_version?: string;
@@ -327,8 +328,8 @@ export const createSession = async (sessionData: CrawlSession) => {
     
     console.log("Executing SQL to create session");
     const result = await dbConn.execute(
-      'INSERT INTO crawl_sessions (title, version, chroma_path) VALUES (?, ?, ?)',
-      [sessionData.title, sessionData.version || '', sessionData.chroma_path]
+      'INSERT INTO crawl_sessions (title, version) VALUES (?, ?)',
+      [sessionData.title, sessionData.version || '']
     );
     
     console.log("Session created in database, result:", result);
@@ -393,8 +394,7 @@ export const duplicateSession = async (id: number): Promise<CrawlSession> => {
     // Create a copy with "Copy of" prefix
     const newSession = await createSession({
       title: `Copy of ${originalSession.title}`,
-      version: originalSession.version,
-      chroma_path: originalSession.chroma_path
+      version: originalSession.version
     });
     
     // Get the original crawl settings
@@ -659,10 +659,9 @@ export const saveUserSettings = async (settings: UserSettings) => {
     // Create new settings
     console.log("No existing settings found, creating new settings");
     const result = await dbConn.execute(
-      'INSERT INTO user_settings (openai_key, chroma_path, language, language_version, framework, framework_version, library, library_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO user_settings (openai_key, language, language_version, framework, framework_version, library, library_version) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [
         settings.openai_key || '', 
-        settings.chroma_path || '',
         settings.language || null,
         settings.language_version || null,
         settings.framework || null,
@@ -685,11 +684,6 @@ export const saveUserSettings = async (settings: UserSettings) => {
     if (settings.openai_key !== undefined) {
       updates.push('openai_key = ?');
       params.push(settings.openai_key);
-    }
-    
-    if (settings.chroma_path !== undefined) {
-      updates.push('chroma_path = ?');
-      params.push(settings.chroma_path);
     }
     
     // Add AI processing fields
@@ -879,7 +873,7 @@ export const getUserSettings = async () => {
   const dbConn = await initDB();
   console.log("Fetching user settings from database");
   const result = await dbConn.select<UserSettings[]>(
-    'SELECT id, openai_key, chroma_path, language, language_version, framework, framework_version, library, library_version FROM user_settings LIMIT 1'
+    'SELECT id, openai_key, language, language_version, framework, framework_version, library, library_version FROM user_settings LIMIT 1'
   );
   
   console.log("Raw user settings from database:", JSON.stringify(result, null, 2));
@@ -887,7 +881,6 @@ export const getUserSettings = async () => {
   if (result.length === 0) {
     const defaultSettings = {
       openai_key: '',
-      chroma_path: '',
       language: null,
       language_version: null,
       framework: null,
@@ -1006,48 +999,47 @@ export const deleteDocumentationSnippet = async (snippet_id: string): Promise<bo
 
 // Clean up duplicate URLs for a session, keeping only one instance of each URL (preferring non-error statuses)
 export const cleanupDuplicateURLs = async (sessionId: number): Promise<number> => {
-  const dbConn = await initDB();
+  const db = await initDB();
   
   try {
-    // First, identify duplicate URLs by their URL value
-    const duplicates = await dbConn.select<{url: string, count: number}[]>(
-      'SELECT url, COUNT(*) as count FROM urls WHERE session_id = ? GROUP BY url HAVING COUNT(*) > 1',
+    // Find URLs that appear more than once
+    const duplicates = await db.select<{url: string, count: number}[]>(
+      `SELECT url, COUNT(*) as count 
+       FROM urls 
+       WHERE session_id = ? 
+       GROUP BY url 
+       HAVING COUNT(*) > 1`,
       [sessionId]
     );
     
-    if (duplicates.length === 0) {
-      return 0; // No duplicates found
-    }
-    
     let deletedCount = 0;
     
-    // For each duplicate URL, keep the best record and delete others
+    // For each duplicated URL, keep only the first instance
     for (const dup of duplicates) {
       // Get all instances of this URL
-      const instances = await dbConn.select<CrawlURL[]>(
-        'SELECT * FROM urls WHERE session_id = ? AND url = ? ORDER BY CASE status WHEN "crawled" THEN 1 WHEN "pending" THEN 2 WHEN "skipped" THEN 3 WHEN "error" THEN 4 ELSE 5 END, id ASC',
+      const instances = await db.select<CrawlURL[]>(
+        `SELECT * FROM urls WHERE session_id = ? AND url = ? ORDER BY id ASC`,
         [sessionId, dup.url]
       );
       
-      if (instances.length <= 1) continue;
-      
-      // Keep the first one (best status) and delete the rest
-      const idsToDelete = instances.slice(1).map(i => i.id);
-      
-      for (const id of idsToDelete) {
-        if (id) {
-          await dbConn.execute(
-            'DELETE FROM urls WHERE id = ?',
-            [id]
-          );
-          deletedCount++;
-        }
+      // Keep the first one, delete the rest
+      if (instances.length > 1) {
+        const idsToDelete = instances.slice(1).map(u => u.id);
+        const placeholders = idsToDelete.map(() => '?').join(',');
+        
+        // Delete duplicates
+        await db.execute(
+          `DELETE FROM urls WHERE id IN (${placeholders})`,
+          [...idsToDelete]
+        );
+        
+        deletedCount += idsToDelete.length;
       }
     }
     
     return deletedCount;
   } catch (error) {
-    console.error('Error cleaning up duplicate URLs:', error);
+    console.error("Error cleaning up duplicate URLs:", error);
     throw error;
   }
 };
@@ -1057,7 +1049,7 @@ export const deleteAllURLs = async (sessionId: number): Promise<number> => {
   try {
     await initDB();
     
-    const result = await db!.execute(
+    const result = await dbConn.execute(
       `DELETE FROM urls WHERE session_id = $1`,
       [sessionId]
     );
@@ -1113,26 +1105,23 @@ export const deleteURLsMatchingAntiPatterns = async (
   antiPaths: string[], 
   antiKeywords: string[]
 ): Promise<number> => {
+  const db = await initDB();
+  
   try {
-    await initDB();
-    
-    // Get URLs that match anti-patterns
+    // Get the URLs that match the anti-patterns
     const urlsToDelete = await getURLsMatchingAntiPatterns(sessionId, antiPaths, antiKeywords);
     
     if (urlsToDelete.length === 0) {
       return 0;
     }
     
-    // Create placeholders for SQL query
-    const placeholders = urlsToDelete.map((_, index) => `$${index + 2}`).join(',');
-    
     // Delete the URLs
-    const result = await db!.execute(
-      `DELETE FROM urls WHERE session_id = $1 AND url IN (${placeholders})`,
+    const result = await db.execute(
+      `DELETE FROM urls WHERE session_id = ? AND url IN (${urlsToDelete.map(() => '?').join(',')})`,
       [sessionId, ...urlsToDelete.map(url => url.url)]
     );
     
-    return result.rowsAffected;
+    return urlsToDelete.length;
   } catch (error) {
     console.error("Error deleting URLs matching anti-patterns:", error);
     throw error;
@@ -1146,38 +1135,27 @@ export const exportSession = async (id: number): Promise<any> => {
   await initDB();
   
   try {
-    // Get session data
+    // Fetch all data related to this session
     const session = await getSession(id);
     if (!session) {
       throw new Error(`Session with ID ${id} not found`);
     }
     
-    // Get session settings
+    // Get settings for this session
     const settings = await getCrawlSettings(id);
     
-    // Get URLs associated with the session (with full content for export)
-    const urls = await getURLs(id, true);
+    // Get URLs for this session (without HTML/markdown content)
+    const urls = await getURLs(id, false);
     
-    // Create export object
+    // Build export object
     const exportData = {
       session: {
         title: session.title,
         version: session.version,
-        chroma_path: session.chroma_path,
         created_at: session.created_at
       },
-      settings: settings ? {
-        prefix_path: settings.prefix_path,
-        anti_paths: settings.anti_paths,
-        anti_keywords: settings.anti_keywords
-      } : null,
-      urls: urls.map(url => ({
-        url: url.url,
-        status: url.status,
-        html: url.html,
-        markdown: url.markdown,
-        cleaned_markdown: url.cleaned_markdown
-      }))
+      settings: settings,
+      urls: urls
     };
     
     return exportData;
@@ -1202,8 +1180,7 @@ export const importSession = async (importData: any): Promise<CrawlSession> => {
     // Create new session
     const sessionData = {
       title: importData.session.title,
-      version: importData.session.version,
-      chroma_path: importData.session.chroma_path
+      version: importData.session.version
     };
     
     const newSession = await createSession(sessionData);

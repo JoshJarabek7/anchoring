@@ -36,6 +36,11 @@ npm install
 npm run tauri dev
 ```
 
+## Usage Guide
+
+For a comprehensive tutorial and walkthrough of the Anchoring Desktop Application, check out this guide:
+[Anchoring Desktop Tutorial](https://x.com/mrmidwit/status/1898570762128183730?s=46)
+
 ## Building the Application
 
 To create a production build:
