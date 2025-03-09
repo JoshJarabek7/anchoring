@@ -60,18 +60,45 @@ export interface CrawlerConfig {
 
 // Function to check if URL should be crawled based on config
 export const shouldCrawlURL = (url: string, config: CrawlerConfig): boolean => {
+  // Check if URL is null, undefined, or empty
+  if (!url || url.trim() === '') {
+    console.log(`Rejecting invalid URL: ${url}`);
+    return false;
+  }
+
+  try {
+    // Try to parse the URL to validate it
+    new URL(url);
+  } catch (e) {
+    console.log(`Rejecting malformed URL: ${url}`);
+    return false;
+  }
+  
   // Check if URL starts with the prefix path
   if (!url.startsWith(config.prefixPath)) {
+    console.log(`URL not matching prefix. URL: ${url}, Prefix: ${config.prefixPath}`);
     return false;
   }
   
   // Check if URL contains any anti-paths
-  if (config.antiPaths.some(path => url.includes(path))) {
+  if (config.antiPaths.length > 0 && config.antiPaths.some(path => {
+    if (path && path.trim() !== '' && url.includes(path)) {
+      console.log(`URL contains excluded path. URL: ${url}, Excluded Path: ${path}`);
+      return true;
+    }
+    return false;
+  })) {
     return false;
   }
   
   // Check if URL contains any anti-keywords
-  if (config.antiKeywords.some(keyword => url.includes(keyword))) {
+  if (config.antiKeywords.length > 0 && config.antiKeywords.some(keyword => {
+    if (keyword && keyword.trim() !== '' && url.includes(keyword)) {
+      console.log(`URL contains excluded keyword. URL: ${url}, Excluded Keyword: ${keyword}`);
+      return true;
+    }
+    return false;
+  })) {
     return false;
   }
   
@@ -362,6 +389,16 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
     return;
   }
   
+  // Log important configuration details at start
+  console.log("----------- CRAWLER CONFIGURATION -----------");
+  console.log(`Start URL: ${config.startUrl}`);
+  console.log(`Prefix Path: ${config.prefixPath}`);
+  console.log(`Anti-Paths: ${config.antiPaths.join(', ')}`);
+  console.log(`Anti-Keywords: ${config.antiKeywords.join(', ')}`);
+  console.log(`Unlimited Parallelism: ${config.unlimitedParallelism}`);
+  console.log(`Session ID: ${config.sessionId}`);
+  console.log("-------------------------------------------");
+  
   // Set crawling state
   isCrawling = true;
   crawlingStopped = false;
@@ -398,7 +435,15 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
   }
   
   // Use a Set for queue to ensure URLs are unique
-  const queueSet = new Set<string>([config.startUrl]);
+  const queueSet = new Set<string>();
+  // Only add the startUrl if it passes our crawling criteria
+  if (shouldCrawlURL(config.startUrl, config)) {
+    queueSet.add(config.startUrl);
+  } else {
+    console.warn(`Starting URL ${config.startUrl} does not match crawling criteria. Check your configuration.`);
+    return; // Exit early if the start URL doesn't match the criteria
+  }
+  
   // Convert to array for easier manipulation
   const queue: string[] = Array.from(queueSet);
   const visited = new Set<string>();
@@ -423,25 +468,43 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
     
     // Use a Set for the queue to ensure uniqueness
     const queueSet = new Set<string>();
-    if (!visited.has(config.startUrl) && !globalVisitedUrls.has(config.startUrl)) {
-      queueSet.add(config.startUrl);
-    }
+    
+    // Always add start URL to the queue, regardless of tracking status
+    console.log(`Always adding start URL to queue: ${config.startUrl}`);
+    queueSet.add(config.startUrl);
     
     // Add them to the appropriate sets
     let pendingCount = 0;
     for (const urlObj of existingUrls) {
-      // Add all URLs to the global visited set for tracking
-      globalVisitedUrls.add(urlObj.url);
+      // Check if it's the start URL - we always want to crawl the start URL
+      const isStartUrl = (urlObj.url === config.startUrl);
       
-      if (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed') {
-        // If already processed, just mark as visited and don't recrawl
+      // Only add to global tracking if not the start URL
+      if (!isStartUrl) {
+        globalVisitedUrls.add(urlObj.url);
+      }
+      
+      if ((urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed') && !isStartUrl) {
+        // If already processed and not the start URL, just mark as visited and don't recrawl
         console.log(`Skipping already processed URL: ${urlObj.url} (status: ${urlObj.status})`);
         visited.add(urlObj.url);
-      } else if (urlObj.status === 'pending' && urlObj.url !== config.startUrl) {
-        // If pending (and not the start URL), add to queue to process
-        console.log(`Adding pending URL to queue: ${urlObj.url}`);
-        queueSet.add(urlObj.url);
-        pendingCount++;
+      } else if (urlObj.status === 'pending' || isStartUrl) {
+        // Only add to queue if it passes the criteria check
+        if (shouldCrawlURL(urlObj.url, config)) {
+          console.log(`Adding pending URL to queue: ${urlObj.url}`);
+          queueSet.add(urlObj.url);
+          pendingCount++;
+        } else {
+          console.log(`Skipping pending URL that doesn't match criteria: ${urlObj.url}`);
+          // Update status to avoid processing in the future
+          try {
+            if (urlObj.id) {
+              await updateURLStatus(urlObj.id, 'error');
+            }
+          } catch (err) {
+            console.error(`Error updating URL status: ${urlObj.url}`, err);
+          }
+        }
       }
     }
     
@@ -449,6 +512,21 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
     const queue: string[] = Array.from(queueSet);
     
     console.log(`Loaded ${visited.size} processed and ${pendingCount} pending URLs from database`);
+    
+    // Debugging: Check if startUrl is in the queue
+    if (queue.includes(config.startUrl)) {
+      console.log(`Start URL ${config.startUrl} is in the queue`);
+    } else {
+      console.log(`Start URL ${config.startUrl} is NOT in the queue!`);
+      
+      // Force add the start URL to the queue if it's not there
+      if (shouldCrawlURL(config.startUrl, config)) {
+        console.log(`Forcing start URL ${config.startUrl} into the queue`);
+        queue.push(config.startUrl);
+      } else {
+        console.log(`Cannot add start URL ${config.startUrl} to queue because it doesn't match criteria`);
+      }
+    }
   } catch (error) {
     console.error("Error loading existing URLs:", error);
   }
@@ -459,16 +537,32 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
   while ((queue.length > 0 || inProgress.size > 0) && !crawlingStopped) {
     // Log crawler status periodically
     if (queue.length > 0 || inProgress.size > 0) {
-      console.log(`Crawler status: ${inProgress.size} in progress, ${queue.length} queued, ${visited.size} visited`);
+      console.log(`Crawler status: ${inProgress.size} in progress, ${queue.length} queued, ${visited.size} visited, prefix: ${config.prefixPath}`);
+      
+      // Detailed logging for in-progress URLs
+      if (inProgress.size > 0) {
+        console.log(`In progress URLs: ${Array.from(inProgress).slice(0, 3).join(', ')}${inProgress.size > 3 ? ` and ${inProgress.size - 3} more...` : ''}`);
+      }
     }
     
     // Fill the processing queue up to concurrency limit
     while (inProgress.size < concurrency && queue.length > 0 && !crawlingStopped) {
       const url = queue.shift()!;
       
-      // Skip if already visited or in progress - check both local and global state
-      if (visited.has(url) || inProgress.has(url) || globalVisitedUrls.has(url)) {
+      // Check if this is the start URL - special case
+      const isStartUrl = (url === config.startUrl);
+      
+      // Skip if already visited or in progress - but always process the start URL
+      if (!isStartUrl && (visited.has(url) || inProgress.has(url) || globalVisitedUrls.has(url))) {
         console.log(`Skipping already visited/in-progress URL: ${url}`);
+        continue;
+      }
+      
+      // Double check that URL still matches criteria (could have changed since being added to queue)
+      if (!shouldCrawlURL(url, config)) {
+        console.log(`URL no longer matches criteria, skipping: ${url}`);
+        visited.add(url);
+        globalVisitedUrls.add(url);
         continue;
       }
       
@@ -476,12 +570,20 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
       try {
         const urlObj = await getURLByUrl(config.sessionId, url);
         
-        // If URL exists and is already processed, mark as visited and skip
-        if (urlObj && (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed')) {
+        // Check if this is the start URL - special case
+        const isStartUrl = (url === config.startUrl);
+
+        // If URL exists and is already processed, mark as visited and skip (unless it's the start URL)
+        if (!isStartUrl && urlObj && (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed')) {
           console.log(`Skipping already processed URL from DB check: ${url} (status: ${urlObj.status})`);
           visited.add(url);
           globalVisitedUrls.add(url);
           continue;
+        }
+        
+        // If it's the start URL, always process it regardless of status
+        if (isStartUrl) {
+          console.log(`Processing start URL regardless of status: ${url}`);
         }
       } catch (err) {
         console.error(`Error checking URL status in DB: ${url}`, err);

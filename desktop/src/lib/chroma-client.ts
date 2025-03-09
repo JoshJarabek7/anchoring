@@ -443,7 +443,7 @@ export class ChromaClient {
       
       // If no instance API key, try environment variable
       if (!effectiveApiKey || effectiveApiKey.trim() === "") {
-        const envApiKey = process.env.OPENAI_API_KEY;
+        const envApiKey = import.meta.env.VITE_OPENAI_API_KEY;
         if (envApiKey) {
           console.log(`Using API key from environment variable (length: ${envApiKey.length})`);
           effectiveApiKey = envApiKey;
@@ -726,27 +726,8 @@ export class ChromaClient {
       
       // Only use hardcoded fallback if nothing else works
       console.log("All approaches failed to find components, using hardcoded fallback");
-      if (category === DocumentationCategory.LANGUAGE) {
-        return [
-          { name: "TypeScript", version: "5.6.2" },
-          { name: "JavaScript", version: "ES2020" },
-          { name: "Python", version: "3.10" }
-        ];
-      } else if (category === DocumentationCategory.FRAMEWORK) {
-        return [
-          { name: "React", version: "18.2.0" },
-          { name: "Angular", version: "17.0.0" },
-          { name: "Vue", version: "3.4.0" },
-          { name: "Tauri", version: "2.3.1" }
-        ];
-      } else if (category === DocumentationCategory.LIBRARY) {
-        return [
-          { name: "jQuery", version: "3.7.1" },
-          { name: "Redux", version: "5.0.0" },
-          { name: "lodash", version: "4.17.21" }
-        ];
-      }
-      
+      // Remove hardcoded fallbacks and simply return an empty array
+      console.log(`No ${category} components found in the database. You may need to crawl and process documentation for this category.`);
       return [];
     } catch (error) {
       console.error(`Error getting available ${category} components:`, error);

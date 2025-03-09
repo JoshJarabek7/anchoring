@@ -52,7 +52,7 @@ export default function CreateSessionForm({
       const sessionData = {
         title: titleValue.trim(),
         version: versionValue.trim(),
-        chroma_path: '/tmp/chroma' // Default chroma path matching Docker volume
+        chroma_path: "chroma" // Default chroma path
       };
       
       console.log("Submitting session data:", sessionData);

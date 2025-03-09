@@ -112,23 +112,42 @@ export default function CrawlerForm({
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="prefix_path">URL Prefix Path <span className="text-red-500">*</span></Label>
-            <Input
-              id="prefix_path"
-              placeholder="e.g., https://v2.tauri.app"
-              value={prefixPath}
-              onChange={(e) => {
-                const value = e.target.value;
-                setPrefixPath(value);
-                form.setValue("prefix_path", value);
-              }}
-            />
+            <div className="relative">
+              <Input
+                id="prefix_path"
+                placeholder="e.g., https://v2.tauri.app"
+                value={prefixPath}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setPrefixPath(value);
+                  form.setValue("prefix_path", value);
+                }}
+                className={`${!prefixPath.startsWith('http') && prefixPath ? 'border-amber-500 focus:ring-amber-500' : ''}`}
+              />
+              {!prefixPath.startsWith('http') && prefixPath && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <span className="text-amber-500 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                  </span>
+                </div>
+              )}
+            </div>
             {form.formState.errors.prefix_path && (
               <p className="text-sm text-red-500">
                 {form.formState.errors.prefix_path.message}
               </p>
             )}
+            {!prefixPath.startsWith('http') && prefixPath && (
+              <p className="text-sm text-amber-500 font-medium">
+                URL must start with http:// or https://
+              </p>
+            )}
             <p className="text-xs text-gray-500">
-              Only URLs that start with this prefix will be crawled.
+              Only URLs that start with this prefix will be crawled. Must be a complete URL including protocol.
             </p>
           </div>
           
@@ -227,10 +246,24 @@ export default function CrawlerForm({
         <CardFooter className="pt-6">
           <Button 
             type="submit"
-            disabled={saving || !prefixPath.trim()}
+            disabled={saving || !prefixPath.trim() || !prefixPath.startsWith('http')}
             className="min-w-40 bg-primary"
           >
-            {saving ? "Saving..." : "Save Configuration"}
+            {saving ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                  <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                  <polyline points="7 3 7 8 15 8"></polyline>
+                </svg>
+                <span>Save Configuration</span>
+              </>
+            )}
           </Button>
         </CardFooter>
       </form>

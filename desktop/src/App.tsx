@@ -4,10 +4,8 @@ import { toast } from "sonner";
 // import { exists } from "@tauri-apps/plugin-fs";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { getUserSettings } from "./lib/db";
 import { BookmarkIcon, StopCircle } from "lucide-react";
@@ -22,102 +20,6 @@ import UrlInput from "./components/crawler/UrlInput";
 import URLList from "./components/crawler/URLList";
 import AiProcessing from "./components/crawler/AiProcessing";
 import KnowledgeBase from "./components/knowledge/KnowledgeBase";
-
-// Setup screen component
-const SetupScreen = ({ onSetup }: { onSetup: (path: string) => void }) => {
-  const [chromaPath, setChromaPath] = useState("");
-  const [validating, setValidating] = useState(false);
-  const [isValid, setIsValid] = useState<boolean | null>(null);
-  const [initializingDb, setInitializingDb] = useState(false);
-
-  const handleValidate = async () => {
-    setValidating(true);
-    try {
-      // Dynamically import the fs plugin to avoid CORS issues
-      const fsPlugin = await import("@tauri-apps/plugin-fs");
-      // Check if path exists using fs plugin
-      const pathExists = await fsPlugin.exists(chromaPath);
-      setIsValid(pathExists);
-      
-      if (pathExists) {
-        setInitializingDb(true);
-        // DB is now initialized by parent component to avoid duplication
-        // We just need to continue with setup
-        setInitializingDb(false);
-        onSetup(chromaPath);
-      }
-    } catch (error) {
-      console.error("Error validating ChromaDB path:", error);
-      setIsValid(false);
-      
-      // Provide more specific error messages
-      if (String(error).includes("forbidden path")) {
-        toast.error(
-          "Path access denied. This path is not allowed by Tauri security settings. Please choose a different location or contact support.",
-          { 
-            id: "path-forbidden",
-            duration: 5000
-          }
-        );
-      } else {
-        toast.error("Failed to validate path. Make sure Tauri is running properly.", {
-          id: "path-validation-error"
-        });
-      }
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-background p-4">
-      <Card className="w-[450px]">
-        <CardHeader>
-          <CardTitle>Welcome to Anchoring</CardTitle>
-          <CardDescription>
-            Please set up your ChromaDB path to get started.
-            This should match the path used by the MCP server.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="chroma-path">ChromaDB Path</Label>
-              <Input
-                id="chroma-path"
-                placeholder="/path/to/your/chroma/directory"
-                value={chromaPath}
-                onChange={(e) => setChromaPath(e.target.value)}
-              />
-            </div>
-            
-            {isValid === false && (
-              <div className="text-sm text-red-500">
-                The specified path does not exist. Please enter a valid directory path.
-              </div>
-            )}
-            
-            {initializingDb && (
-              <div className="space-y-2">
-                <div className="text-sm">Initializing database...</div>
-                <Progress value={50} className="w-full" />
-              </div>
-            )}
-          </div>
-        </CardContent>
-        <CardFooter>
-          <Button
-            onClick={handleValidate}
-            disabled={!chromaPath || validating || initializingDb}
-            className="w-full"
-          >
-            {validating ? "Validating..." : "Set Up Anchoring"}
-          </Button>
-        </CardFooter>
-      </Card>
-    </div>
-  );
-};
 
 // Crawler page component
 const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
@@ -361,7 +263,7 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
 };
 
 // Main application component
-const MainApp = ({ }: { chromaPath: string }) => {
+const MainApp = () => {
   const [sessions, setSessions] = useState<CrawlSession[]>([]);
   const [activeSession, setActiveSession] = useState<CrawlSession | null>(null);
   const [activeTab, setActiveTab] = useState("crawler");
@@ -470,7 +372,7 @@ const MainApp = ({ }: { chromaPath: string }) => {
         // If no key from database, try environment variable
         if (!key) {
           console.log("Checking environment for API key...");
-          const envKey = process.env.OPENAI_API_KEY;
+          const envKey = import.meta.env.VITE_OPENAI_API_KEY;
           if (envKey) {
             console.log(`Found API key in environment (length: ${envKey.length})`);
             key = envKey;
@@ -571,63 +473,29 @@ const MainApp = ({ }: { chromaPath: string }) => {
 };
 
 function App() {
-  const [isSetup, setIsSetup] = useState(false);
-  const [chromaPath, setChromaPath] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Check if we already have settings with ChromaDB path
+  // Initialize the database and application
   useEffect(() => {
-    const loadSettings = async () => {
+    const initializeApp = async () => {
       try {
         setLoading(true);
         
-        // Initialize the database first
+        // Initialize the database
         const { initDB } = await import("./lib/db");
         await initDB();
         
-        // Then check for existing settings
-        const settings = await getUserSettings();
-        
-        if (settings.chroma_path) {
-          // We already have settings, check if path exists
-          const fsPlugin = await import("@tauri-apps/plugin-fs");
-          const pathExists = await fsPlugin.exists(settings.chroma_path);
-          
-          if (pathExists) {
-            // We can skip setup screen
-            console.log("Found valid ChromaDB path in settings:", settings.chroma_path);
-            setChromaPath(settings.chroma_path);
-            setIsSetup(true);
-            // Avoid unnecessary toast that clutters the UI
-          } else {
-            console.log("ChromaDB path exists in settings but directory not found:", settings.chroma_path);
-          }
-        } else {
-          console.log("No ChromaDB path found in settings");
-        }
+        console.log("Database initialized successfully");
       } catch (error) {
-        console.error("Error loading settings:", error);
+        console.error("Error initializing application:", error);
+        toast.error("Failed to initialize application. Please check the console for details.");
       } finally {
         setLoading(false);
       }
     };
     
-    loadSettings();
+    initializeApp();
   }, []);
-
-  const handleSetup = async (path: string) => {
-    try {
-      // Also save the path to user settings
-      const { saveUserSettings } = await import("./lib/db");
-      await saveUserSettings({ chroma_path: path });
-      
-      setChromaPath(path);
-      setIsSetup(true);
-    } catch (error) {
-      console.error("Failed to save ChromaDB path:", error);
-      toast.error("Failed to save ChromaDB path. Please try again.");
-    }
-  };
 
   if (loading) {
     return (
@@ -640,15 +508,7 @@ function App() {
     );
   }
 
-  return (
-    <>
-      {!isSetup ? (
-        <SetupScreen onSetup={handleSetup} />
-      ) : (
-        <MainApp chromaPath={chromaPath} />
-      )}
-    </>
-  );
+  return <MainApp />;
 }
 
 export default App;
