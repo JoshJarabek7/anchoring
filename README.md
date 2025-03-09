@@ -151,6 +151,11 @@ If you encounter issues with Tauri:
 2. Check that all dependencies are installed: `npm install`
 3. Look for error messages in the terminal output
 
+### App Walkthrough Tutorial
+
+For a comprehensive tutorial and walkthrough of the Anchoring Desktop Application, check out this guide:
+[Anchoring Desktop Tutorial](https://x.com/mrmidwit/status/1898570762128183730?s=46)
+
 ## License
 
 [MIT License](LICENSE)
