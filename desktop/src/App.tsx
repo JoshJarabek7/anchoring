@@ -269,6 +269,74 @@ const MainApp = () => {
   const [activeTab, setActiveTab] = useState("crawler");
   const [apiKey, setApiKey] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
+  
+  // Load OpenAI API key
+  useEffect(() => {
+    const loadApiKey = async () => {
+      try {
+        console.log("Loading API key from multiple sources...");
+        let key = "";
+        
+        // First try from database
+        try {
+          console.log("Checking database for API key...");
+          const settings = await getUserSettings();
+          console.log("Retrieved settings:", settings);
+          if (settings?.openai_key) {
+            console.log(`Found API key in database settings (length: ${settings.openai_key.length})`);
+            key = settings.openai_key;
+          }
+        } catch (dbError) {
+          console.error("Error accessing database for API key:", dbError);
+        }
+        
+        // If no key from database, try environment variable
+        if (!key) {
+          console.log("Checking environment for API key...");
+          const envKey = import.meta.env.VITE_OPENAI_API_KEY;
+          if (envKey) {
+            console.log(`Found API key in environment (length: ${envKey.length})`);
+            key = envKey;
+          }
+        }
+        
+        // Set the API key state if we found one
+        if (key) {
+          console.log("Setting API key in state");
+          setApiKey(key);
+        } else {
+          console.log("No API key found in any source");
+          setApiKey("");
+        }
+      } catch (error) {
+        console.error("Error loading API key:", error);
+        setApiKey("");
+      } finally {
+        setApiKeyLoaded(true);
+        setLoading(false);
+      }
+    };
+
+    loadApiKey();
+  }, []); // Empty dependency array means this runs once on mount
+
+  // Load sessions
+  useEffect(() => {
+    const loadSessions = async () => {
+      try {
+        const result = await getSessions();
+        setSessions(result);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading sessions:", error);
+        toast.error("Failed to load sessions");
+        setLoading(false);
+      }
+    };
+    
+    loadSessions();
+  }, []);
   
   // Add crawling status state
   const [isCrawling, setIsCrawling] = useState(false);
@@ -349,50 +417,6 @@ const MainApp = () => {
     setActiveSession(session);
     setActiveTab("crawler");
   };
-  
-  // Load OpenAI API key
-  useEffect(() => {
-    const loadApiKey = async () => {
-      try {
-        console.log("Loading API key from multiple sources...");
-        let key = "";
-        
-        // First try from database
-        try {
-          console.log("Checking database for API key...");
-          const settings = await getUserSettings();
-          if (settings?.openai_key) {
-            console.log(`Found API key in database settings (length: ${settings.openai_key.length})`);
-            key = settings.openai_key;
-          }
-        } catch (dbError) {
-          console.error("Error accessing database for API key:", dbError);
-        }
-        
-        // If no key from database, try environment variable
-        if (!key) {
-          console.log("Checking environment for API key...");
-          const envKey = import.meta.env.VITE_OPENAI_API_KEY;
-          if (envKey) {
-            console.log(`Found API key in environment (length: ${envKey.length})`);
-            key = envKey;
-          }
-        }
-        
-        // If we found a key, use it
-        if (key) {
-          console.log(`Setting API key (length: ${key.length}, first 4 chars: ${key.substring(0, 4)}...)`);
-          setApiKey(key);
-        } else {
-          console.warn("No API key found in any source!");
-        }
-      } catch (error) {
-        console.error("Failed to load API key:", error);
-      }
-    };
-    
-    loadApiKey();
-  }, []);
 
   return (
     <TooltipProvider>
@@ -452,10 +476,16 @@ const MainApp = () => {
             </TabsContent>
             
             <TabsContent value="processing">
-              <AiProcessing 
-                sessionId={activeSession?.id || 0} 
-                apiKey={apiKey}
-              />
+              {loading ? (
+                <div className="flex items-center justify-center p-8">
+                  <span className="loading loading-spinner loading-lg"></span>
+                </div>
+              ) : (
+                <AiProcessing 
+                  sessionId={activeSession?.id || 0} 
+                  apiKey={apiKey}
+                />
+              )}
             </TabsContent>
             
             <TabsContent value="knowledge">
