@@ -51,8 +51,7 @@ export default function CreateSessionForm({
       // Create session with manually prepared data
       const sessionData = {
         title: titleValue.trim(),
-        version: versionValue.trim(),
-        chroma_path: '/tmp/chroma' // Default chroma path
+        version: versionValue.trim()
       };
       
       console.log("Submitting session data:", sessionData);

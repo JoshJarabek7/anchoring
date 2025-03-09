@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { fetchAndSaveProxies, getProxies } from "../../lib/db";
-
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import {

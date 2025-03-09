@@ -1,11 +1,9 @@
 import { z } from "zod";
 
 /**
- * Setup form schema
+ * Setup form schema - No longer requires ChromaDB path
  */
-export const setupFormSchema = z.object({
-  chromaPath: z.string().min(1, "ChromaDB path is required"),
-});
+export const setupFormSchema = z.object({});
 
 export type SetupFormValues = z.infer<typeof setupFormSchema>;
 
@@ -15,7 +13,6 @@ export type SetupFormValues = z.infer<typeof setupFormSchema>;
 export const sessionFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   version: z.string().optional(),
-  chromaPath: z.string().min(1, "ChromaDB path is required"),
 });
 
 export type SessionFormValues = z.infer<typeof sessionFormSchema>;
