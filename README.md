@@ -154,3 +154,43 @@ If you encounter issues with Tauri:
 ## License
 
 [MIT License](LICENSE)
+
+### Database Migration Note (Important)
+
+This version includes a database migration that removes `chroma_path` from the database schema. The migration will run automatically when you start the application for the first time after updating.
+
+If you're experiencing issues after updating:
+
+1. Make sure your ChromaDB server is running on the port specified in your `.env` files
+2. Delete any existing database file if needed:
+   ```
+   # From the desktop directory
+   rm anchoring.db
+   ```
+3. Restart the application
+
+### Configuration
+
+The application uses environment variables for configuration:
+
+#### Desktop App Environment Variables
+
+- `VITE_CHROMA_HOST`: Host for the ChromaDB server (default: localhost)
+- `VITE_CHROMA_PORT`: Port for the ChromaDB server (default: 8001)
+- `VITE_OPENAI_API_KEY`: Your OpenAI API key (optional, can be set in UI)
+
+#### MCP Server Environment Variables
+
+- `CHROMADB_HOST`: Host for the ChromaDB server (default: localhost)
+- `CHROMADB_PORT`: Port for the ChromaDB server (default: 8001)
+- `OPENAI_API_KEY`: Your OpenAI API key
+- `MCP_SERVER_NAME`: Name for the MCP server
+
+### Troubleshooting
+
+If you encounter any issues:
+
+1. Ensure ChromaDB is running: `docker ps` should show the ChromaDB container
+2. Check that environment variables are set correctly
+3. Look for errors in the terminal where the app is running
+4. Try restarting both ChromaDB and the application
