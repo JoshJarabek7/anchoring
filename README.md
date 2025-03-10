@@ -123,7 +123,6 @@ docker ps
 #### 2. Install the MCP Server with Claude
 
 ```bash
-# From the project root directory
 uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "/path/to/anchoring/mcp-server/app/server.py"
 ```
 
