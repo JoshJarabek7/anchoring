@@ -83,8 +83,8 @@ docker ps
 ### 4. Install the MCP Server with Claude
 
 ```bash
-# From the mcp-server directory
-mcp install app/server.py
+# From the project root directory
+uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "mcp-server/app/server.py"
 ```
 
 ### 5. Set Up the Desktop Application
@@ -110,7 +110,14 @@ cd mcp-server
 docker-compose up -d
 ```
 
-### 2. Start the Tauri development environment
+### 2. Run the MCP Server with Cursor or other MCP clients by putting this command in your MCP settings
+
+```bash
+# For Cursor and other MCP clients, run the server with this command
+uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp run "mcp-server/app/server.py"
+```
+
+### 3. Start the Tauri development environment
 
 ```bash
 # From the desktop directory

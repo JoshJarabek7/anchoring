@@ -86,19 +86,18 @@ uv add -r requirements.txt
 
 ### 5. Install and Run the MCP Server
 
-Install the MCP server with Claude Desktop:
+Install the MCP server (using the start script or for Claude Desktop):
 
 ```bash
-mcp install app/server.py
+# From the project root directory
+uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "mcp-server/app/server.py"
 ```
 
-### 6. Using the MCP with Cursor
-
-To use the MCP with Cursor:
+Run the MCP server directly with Cursor or other MCP clients:
 
 ```bash
-# Replace with your actual path
-uv run --with chromadb --with mcp[cli] --with numpy --with openai --with pydantic --with tiktoken mcp run /path/to/your/anchoring/mcp-server/app/server.py
+# From the project root directory
+uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp run "mcp-server/app/server.py"
 ```
 
 ## Usage

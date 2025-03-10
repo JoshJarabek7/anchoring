@@ -37,27 +37,11 @@ if ! command_exists python3; then
   exit 1
 fi
 
-# Check for pyenv
-if command_exists pyenv; then
-  echo "Detected pyenv installation. Will use uv to manage Python version."
-  PYENV_DETECTED=true
-else
-  # Check Python version only if not using pyenv
-  if command_exists python3; then
-    PYTHON_VERSION=$(python3 --version 2>&1 | cut -d ' ' -f 2)
-    PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d '.' -f 1)
-    PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d '.' -f 2)
-
-    if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]); then
-      echo "Warning: System Python version $PYTHON_VERSION is older than 3.10."
-      echo "uv will attempt to use or download a compatible version for the virtual environment."
-    fi
-
-    if [ "$PYTHON_MAJOR" -gt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 13 ]); then
-      echo "Warning: System Python version $PYTHON_VERSION is 3.13 or newer."
-      echo "uv will attempt to use or download a compatible version for the virtual environment."
-    fi
-  fi
+# Check for Python version (informational only)
+if command_exists python3; then
+  PYTHON_VERSION=$(python3 --version 2>&1 | cut -d ' ' -f 2)
+  echo "Detected Python version: $PYTHON_VERSION"
+  echo "Note: uv will use Python >=3.10,<3.13 for running MCP components regardless of system Python version."
 fi
 
 # Check for Rust
@@ -129,55 +113,13 @@ EOF
   read -r
 fi
 
-# Set up virtual environment for MCP server
-echo "Setting up Python virtual environment..."
-cd "${MCP_SERVER_DIR}" || { echo "Error: Could not cd to ${MCP_SERVER_DIR}"; exit 1; }
-echo "Changed directory to: $(pwd)"
+# Install MCP server with uv run
+echo "Setting up MCP server with Claude..."
+# Run setup_collection.py with uv run (commented out)
+# uv run --python ">=3.10,<3.13" --with chromadb --with mcp[cli] --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken python3 "${MCP_SERVER_DIR}/app/setup_collection.py"
 
-# Create virtual environment using uv if it doesn't exist
-if [ ! -d ".venv" ]; then
-  echo "Creating virtual environment with Python 3.10-3.12..."
-  # Use --python with version constraint to let uv handle finding/downloading the right version
-  uv venv --python ">=3.10,<3.13" .venv
-  
-  # Check if venv creation was successful
-  if [ ! -d ".venv" ]; then
-    echo "Error: Failed to create virtual environment. Please make sure you have uv installed correctly."
-    exit 1
-  fi
-fi
-
-# Activate virtual environment
-echo "Activating virtual environment..."
-source .venv/bin/activate
-
-# Install dependencies using uv
-echo "Installing MCP server dependencies..."
-uv add -r requirements.txt
-
-# Install MCP CLI in the virtual environment if needed
-if ! command -v mcp &> /dev/null; then
-  echo "Installing MCP CLI in virtual environment..."
-  uv add "mcp[cli]"
-fi
-
-# Check if MCP is installed and register our server
-echo "Checking MCP installation..."
-if command -v mcp &> /dev/null; then
-  # Run setup_collection.py first
-  echo "Setting up ChromaDB collection..."
-  python3 "$(pwd)/app/setup_collection.py"
-  
-  # Then install/reinstall the MCP server
-  echo "Installing MCP server with Claude..."
-  mcp install "$(pwd)/app/server.py"
-else
-  echo "Warning: MCP CLI installation failed. Some features may not work correctly."
-fi
-
-# Deactivate the virtual environment
-deactivate
-cd "${SCRIPT_DIR}"
+# Install MCP server
+uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "${MCP_SERVER_DIR}/app/server.py"
 
 # Install desktop dependencies if needed
 echo "Installing desktop dependencies..."
