@@ -14,6 +14,7 @@ Before using Anchoring, you must install these prerequisites and set up configur
 - [Rust](https://www.rust-lang.org/tools/install) - Required for Tauri and some dependencies
 - [Docker](https://www.docker.com) - For running ChromaDB container
 - [OpenAI API key](https://platform.openai.com/api-keys) - For generating embeddings
+- [Google Chrome](https://www.google.com/chrome/) - For headless browser crawler
 
 #### Platform-Specific Requirements
 
