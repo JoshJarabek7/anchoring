@@ -212,9 +212,17 @@ If you're experiencing issues after updating:
 
 1. Make sure your ChromaDB server is running on the port specified in your `.env` files
 2. Delete any existing database file if needed:
-   ```
+   ```bash
    # On MacOS
    rm ~/Library/Application\ Support/com.gawntlet.anchoring/anchoring.db
+   
+   # On Windows
+   del %APPDATA%\com.gawntlet.anchoring\anchoring.db
+   # or using PowerShell
+   Remove-Item "$env:APPDATA\com.gawntlet.anchoring\anchoring.db"
+   
+   # On Linux
+   rm ~/.local/share/com.gawntlet.anchoring/anchoring.db
    ```
 3. Restart the application
 
@@ -243,3 +251,91 @@ If you encounter any issues:
 2. Check that environment variables are set correctly
 3. Look for errors in the terminal where the app is running
 4. Try restarting both ChromaDB and the application
+
+## Platform-Specific Troubleshooting
+
+### Windows Issues
+
+If you're experiencing problems running the application on Windows:
+
+1. **Chrome Detection Failure**: The app requires Chrome or Chromium for web scraping. Ensure it's installed in one of these standard locations:
+   ```
+   C:\Program Files\Google\Chrome\Application\chrome.exe
+   C:\Program Files (x86)\Google\Chrome\Application\chrome.exe
+   ```
+
+2. **WebView2 Missing**: Make sure Microsoft Edge WebView2 is installed. It's required for Tauri applications on Windows.
+   ```
+   winget install Microsoft.EdgeWebView2Runtime
+   ```
+
+3. **Path Issues**: If using PowerShell, ensure paths don't have unescaped spaces:
+   ```powershell
+   # Correct
+   cd "C:\Path\With Spaces\anchoring"
+   # Incorrect
+   cd C:\Path\With Spaces\anchoring
+   ```
+
+4. **Admin Privileges**: Some operations may require running as Administrator, especially for Docker operations or file access in restricted locations.
+
+5. **File Access Permissions**: If you're getting file access errors, check the `capabilities/default.json` file in `desktop/src-tauri/capabilities/` to ensure it's using platform-independent variables like `$HOME`, `$DATA`, and `$RESOURCE` instead of hardcoded paths.
+
+### Linux Issues
+
+If you're experiencing problems running the application on Linux:
+
+1. **Missing Dependencies**: Ensure all required system dependencies are installed:
+   
+   **Debian/Ubuntu:**
+   ```bash
+   sudo apt update
+   sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+   ```
+   
+   **Arch:**
+   ```bash
+   sudo pacman -Sy
+   sudo pacman -S --needed webkit2gtk-4.1 base-devel curl wget file openssl appmenu-gtk-module libappindicator-gtk3 librsvg
+   ```
+   
+   **Fedora:**
+   ```bash
+   sudo dnf check-update
+   sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget file libappindicator-gtk3-devel librsvg2-devel
+   sudo dnf group install "c-development"
+   ```
+
+2. **Chrome/Chromium Path**: Ensure Chrome or Chromium is installed in one of the standard locations:
+   ```bash
+   sudo apt install chromium-browser   # Debian/Ubuntu
+   sudo pacman -S chromium            # Arch
+   sudo dnf install chromium          # Fedora
+   ```
+
+3. **Docker Permissions**: Ensure your user is in the `docker` group to run Docker commands without sudo:
+   ```bash
+   sudo usermod -aG docker $USER
+   # Log out and back in for changes to take effect
+   ```
+
+4. **Permission Issues**: If the app can't access files, check permissions:
+   ```bash
+   # Fix permissions for the ChromaDB directory
+   chmod -R 755 ~/.local/share/com.gawntlet.anchoring
+   ```
+
+5. **Library Loading Issues**: If you see errors about missing libraries, try installing them:
+   ```bash
+   sudo ldconfig
+   ```
+
+6. **File Access Permissions**: Check the `capabilities/default.json` file in `desktop/src-tauri/capabilities/` to ensure it's using platform-independent variables like `$HOME`, `$DATA`, and `$RESOURCE` instead of hardcoded macOS paths. If you see paths like `/Users/...`, update them to use the appropriate Tauri variables.
+
+### General Platform Issues
+
+1. **Python Version**: Ensure you're using Python 3.10-3.12 (Python 3.13 is not supported)
+2. **Node.js Version**: Use a current LTS version of Node.js
+3. **Path Issues**: Verify all paths in `.env` files are compatible with your OS
+4. **Docker Container**: If ChromaDB container won't start, check for port conflicts
+5. **API Keys**: Ensure your OpenAI API key is valid and has sufficient credits
