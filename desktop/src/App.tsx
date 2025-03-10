@@ -98,6 +98,23 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
       // Reset crawler state before starting
       resetCrawlerState();
       
+      // Get crawl options from the URL list component
+      // Since we can't directly access the state from URLList, we'll use local storage
+      // as a temporary communication channel
+      const crawlOptionsStr = localStorage.getItem('anchoring_crawl_options');
+      let skipProcessedUrls = true; // default to true for backward compatibility
+      let crawlPendingOnly = false; // default to false for backward compatibility
+      
+      if (crawlOptionsStr) {
+        try {
+          const options = JSON.parse(crawlOptionsStr);
+          skipProcessedUrls = options.skipProcessed;
+          crawlPendingOnly = options.crawlPendingOnly;
+        } catch (e) {
+          console.error("Error parsing crawl options from local storage:", e);
+        }
+      }
+      
       // Start crawling for each selected URL
       for (const url of selectedUrls) {
         await startCrawler({
@@ -107,7 +124,9 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
           antiKeywords: settings.anti_keywords ? settings.anti_keywords.split(',').map(k => k.trim()) : [],
           sessionId: sessionId as number,
           maxConcurrentRequests: settings.max_concurrent_requests,
-          unlimitedParallelism: !!settings.unlimited_parallelism
+          unlimitedParallelism: !!settings.unlimited_parallelism,
+          skipProcessedUrls: skipProcessedUrls,
+          crawlPendingOnly: crawlPendingOnly
         });
       }
     } catch (error) {

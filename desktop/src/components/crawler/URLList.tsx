@@ -419,11 +419,29 @@ export default function URLList({ sessionId, onStartCrawling, refreshTrigger = 0
   
   // Handle crawl option changes
   const handleCrawlOptionChange = (option: keyof CrawlOptions, value: boolean) => {
-    setCrawlOptions(prev => ({
-      ...prev,
+    const newOptions = {
+      ...crawlOptions,
       [option]: value
-    }));
+    };
+    
+    setCrawlOptions(newOptions);
+    
+    // Save crawl options to localStorage so they can be accessed by the crawler
+    try {
+      localStorage.setItem('anchoring_crawl_options', JSON.stringify(newOptions));
+    } catch (e) {
+      console.error("Error saving crawl options to localStorage:", e);
+    }
   };
+  
+  // Save initial crawl options to localStorage to ensure they're available
+  useEffect(() => {
+    try {
+      localStorage.setItem('anchoring_crawl_options', JSON.stringify(crawlOptions));
+    } catch (e) {
+      console.error("Error saving initial crawl options to localStorage:", e);
+    }
+  }, []);
   
   // Delete URLs matching anti-patterns
   const handleDeleteAntiPatternUrls = async () => {

@@ -56,6 +56,8 @@ export interface CrawlerConfig {
   sessionId: number;
   maxConcurrentRequests?: number; // Optional param for controlling parallelism
   unlimitedParallelism?: boolean; // Optional param to enable unlimited parallelism
+  skipProcessedUrls?: boolean;    // Optional param to control whether to skip processed URLs
+  crawlPendingOnly?: boolean;     // Optional param to control whether to only crawl pending URLs
 }
 
 // Function to check if URL should be crawled based on config
@@ -332,10 +334,21 @@ export const crawlURL = async (url: string, config: CrawlerConfig): Promise<stri
     // Check if we already have this URL in the DB before processing
     const existingUrl = await getURLByUrl(config.sessionId, url);
     
-    // If URL already exists and is already processed, don't reprocess it
-    if (existingUrl && (existingUrl.status === 'crawled' || existingUrl.status === 'processed' || existingUrl.status === 'error')) {
-      console.log(`Skipping already processed URL: ${url} (status: ${existingUrl.status})`);
-      return [];
+    // Only skip URLs based on user configuration
+    if (existingUrl) {
+      // Skip processed URLs if skipProcessedUrls is true
+      if (config.skipProcessedUrls && existingUrl.status === 'processed') {
+        console.log(`Skipping already processed URL (skipProcessedUrls is true): ${url}`);
+        return [];
+      }
+      
+      // Skip non-pending URLs if crawlPendingOnly is true
+      if (config.crawlPendingOnly && existingUrl.status !== 'pending') {
+        console.log(`Skipping non-pending URL (crawlPendingOnly is true): ${url} (status: ${existingUrl.status})`);
+        return [];
+      }
+      
+      // Allow re-crawling of URLs with any status if no skip flags are set
     }
     
     // Add or update URL in database with pending status
