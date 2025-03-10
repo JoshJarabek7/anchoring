@@ -39,6 +39,7 @@ const createTables = async () => {
       )
     `);
     
+    // Use the post-migration schema for new installations - without chroma_path
     await dbConn.execute(`
       CREATE TABLE IF NOT EXISTS crawl_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +75,7 @@ const createTables = async () => {
       )
     `);
     
-    // First create the user_settings table if it doesn't exist with the original schema
+    // Use the post-migration schema for new installations - without chroma_path
     await dbConn.execute(`
       CREATE TABLE IF NOT EXISTS user_settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,44 +89,23 @@ const createTables = async () => {
       )
     `);
     
-    // Add AI processing columns if they don't exist
-    try {
-      await dbConn.execute(`
-        ALTER TABLE user_settings ADD COLUMN language TEXT;
-        ALTER TABLE user_settings ADD COLUMN language_version TEXT;
-        ALTER TABLE user_settings ADD COLUMN framework TEXT;
-        ALTER TABLE user_settings ADD COLUMN framework_version TEXT;
-        ALTER TABLE user_settings ADD COLUMN library TEXT;
-        ALTER TABLE user_settings ADD COLUMN library_version TEXT;
-      `);
-      console.log("Added AI processing columns to user_settings table");
-    } catch (error) {
-      // Columns might already exist, which is fine
-      console.log("Some AI processing columns might already exist in user_settings table");
-    }
+    // Add processing_settings table if it doesn't exist
+    await dbConn.execute(`
+      CREATE TABLE IF NOT EXISTS processing_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        category TEXT CHECK(category IN ('language', 'framework', 'library')),
+        language TEXT,
+        language_version TEXT,
+        framework TEXT,
+        framework_version TEXT,
+        library TEXT,
+        library_version TEXT,
+        FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE
+      )
+    `);
     
-    // Add parallelism columns to crawl_settings if they don't exist
-    try {
-      await dbConn.execute(`
-        ALTER TABLE crawl_settings ADD COLUMN max_concurrent_requests INTEGER DEFAULT 4;
-      `);
-      console.log("Added max_concurrent_requests column to crawl_settings table");
-    } catch (error) {
-      // Column might already exist, which is fine
-      console.log("Column max_concurrent_requests might already exist in crawl_settings table");
-    }
-    
-    try {
-      await dbConn.execute(`
-        ALTER TABLE crawl_settings ADD COLUMN unlimited_parallelism INTEGER DEFAULT 0;
-      `);
-      console.log("Added unlimited_parallelism column to crawl_settings table");
-    } catch (error) {
-      // Column might already exist, which is fine
-      console.log("Column unlimited_parallelism might already exist in crawl_settings table");
-    }
-    
-    // Simplified documentation snippets schema - primary data stored in ChromaDB
+    // Add documentation_snippets table if it doesn't exist
     await dbConn.execute(`
       CREATE TABLE IF NOT EXISTS documentation_snippets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,13 +116,13 @@ const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
+    
     console.log("All database tables created successfully");
   } catch (error) {
-    console.error("Error creating database tables:", error);
+    console.error("Error creating tables:", error);
     throw error;
   }
-}
+};
 
 // Proxy Types
 export interface Proxy {
@@ -1047,7 +1027,7 @@ export const cleanupDuplicateURLs = async (sessionId: number): Promise<number> =
 // Delete all URLs for a session
 export const deleteAllURLs = async (sessionId: number): Promise<number> => {
   try {
-    await initDB();
+    const dbConn = await initDB();
     
     const result = await dbConn.execute(
       `DELETE FROM urls WHERE session_id = $1`,
