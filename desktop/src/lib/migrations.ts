@@ -23,6 +23,9 @@ export const runMigrations = async (dbConn: Database) => {
     );
     const appliedMigrationNames = appliedMigrations.map(m => m.name);
     
+    // Check for interrupted migrations and fix them
+    await repairInterruptedMigrations(dbConn);
+    
     // Define migrations
     const migrations = [
       {
@@ -30,7 +33,9 @@ export const runMigrations = async (dbConn: Database) => {
         up: async () => {
           console.log("Running migration: remove_chroma_path");
           
-          // Check if columns exist before trying to remove them
+          // Use transactions for atomicity
+          await dbConn.execute('BEGIN TRANSACTION');
+          
           try {
             // Get column info to check if chroma_path exists in crawl_sessions
             const sessionColumns = await dbConn.select<{ name: string }[]>(
@@ -40,7 +45,7 @@ export const runMigrations = async (dbConn: Database) => {
             if (sessionColumns.some(col => col.name === 'chroma_path')) {
               // Create a new table without chroma_path
               await dbConn.execute(`
-                CREATE TABLE crawl_sessions_new (
+                CREATE TABLE IF NOT EXISTS crawl_sessions_new (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   title TEXT NOT NULL,
                   version TEXT,
@@ -69,7 +74,7 @@ export const runMigrations = async (dbConn: Database) => {
             if (userSettingsColumns.some(col => col.name === 'chroma_path')) {
               // Create a new table without chroma_path
               await dbConn.execute(`
-                CREATE TABLE user_settings_new (
+                CREATE TABLE IF NOT EXISTS user_settings_new (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   openai_key TEXT,
                   language TEXT,
@@ -93,8 +98,13 @@ export const runMigrations = async (dbConn: Database) => {
               
               console.log("Removed chroma_path from user_settings");
             }
+            
+            // Commit transaction if all steps succeeded
+            await dbConn.execute('COMMIT');
           } catch (error) {
-            console.error("Error in migration:", error);
+            // Rollback transaction on error
+            await dbConn.execute('ROLLBACK');
+            console.error("Error in migration - rolled back:", error);
             throw error;
           }
         }
@@ -121,4 +131,74 @@ export const runMigrations = async (dbConn: Database) => {
     console.error("Error running migrations:", error);
     throw error;
   }
-}; 
+};
+
+/**
+ * Repair any interrupted migrations by checking for temporary tables
+ * and completing their migrations if needed.
+ */
+async function repairInterruptedMigrations(dbConn: Database) {
+  try {
+    // Get all tables in the database
+    const tables = await dbConn.select<{ name: string }[]>(`
+      SELECT name FROM sqlite_master 
+      WHERE type='table' AND name NOT LIKE 'sqlite_%'
+    `);
+    
+    const tableNames = tables.map(t => t.name);
+    
+    // Check for crawl_sessions_new
+    if (tableNames.includes('crawl_sessions_new')) {
+      console.log("Found interrupted migration: crawl_sessions_new exists");
+      
+      if (tableNames.includes('crawl_sessions')) {
+        console.log("Both crawl_sessions and crawl_sessions_new exist - completing migration");
+        await dbConn.execute('BEGIN TRANSACTION');
+        
+        try {
+          // Drop the old table and rename the new one
+          await dbConn.execute(`DROP TABLE crawl_sessions;`);
+          await dbConn.execute(`ALTER TABLE crawl_sessions_new RENAME TO crawl_sessions;`);
+          
+          await dbConn.execute('COMMIT');
+          console.log("Repaired interrupted migration for crawl_sessions");
+        } catch (error) {
+          await dbConn.execute('ROLLBACK');
+          console.error("Error repairing crawl_sessions migration:", error);
+        }
+      } else {
+        // Old table is gone but new table wasn't renamed
+        console.log("Only crawl_sessions_new exists - renaming to crawl_sessions");
+        await dbConn.execute(`ALTER TABLE crawl_sessions_new RENAME TO crawl_sessions;`);
+      }
+    }
+    
+    // Check for user_settings_new
+    if (tableNames.includes('user_settings_new')) {
+      console.log("Found interrupted migration: user_settings_new exists");
+      
+      if (tableNames.includes('user_settings')) {
+        console.log("Both user_settings and user_settings_new exist - completing migration");
+        await dbConn.execute('BEGIN TRANSACTION');
+        
+        try {
+          // Drop the old table and rename the new one
+          await dbConn.execute(`DROP TABLE user_settings;`);
+          await dbConn.execute(`ALTER TABLE user_settings_new RENAME TO user_settings;`);
+          
+          await dbConn.execute('COMMIT');
+          console.log("Repaired interrupted migration for user_settings");
+        } catch (error) {
+          await dbConn.execute('ROLLBACK');
+          console.error("Error repairing user_settings migration:", error);
+        }
+      } else {
+        // Old table is gone but new table wasn't renamed
+        console.log("Only user_settings_new exists - renaming to user_settings");
+        await dbConn.execute(`ALTER TABLE user_settings_new RENAME TO user_settings;`);
+      }
+    }
+  } catch (error) {
+    console.error("Error checking for interrupted migrations:", error);
+  }
+} 
