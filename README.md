@@ -69,7 +69,7 @@ These configuration steps are necessary regardless of which installation method 
 
 3. **Configure MCP in Your Development Environment**:
    
-   The MCP server needs to be configured in applications like Cursor to access the Claude AI capabilities:
+   The MCP server needs to be configured in applications like Cursor to access the MCP capabilities:
 
    ```
    # For Cursor and other MCP clients, add this command to your MCP settings
@@ -120,7 +120,7 @@ docker-compose up -d
 docker ps
 ```
 
-#### 2. Install the MCP Server with Claude
+#### 2. Install the MCP Server with Claude Desktop
 
 ```bash
 uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "/path/to/anchoring/mcp-server/app/server.py"
