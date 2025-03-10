@@ -64,7 +64,7 @@ These configuration steps are necessary regardless of which installation method 
    # Edit docker-compose.yml to update the volume path for ChromaDB data
    # Find and modify this line to specify where ChromaDB data should be stored:
    # volumes:
-   #   - /path/to/chromadb/data:/chroma/chroma  # Update this path
+   #   - /path/to/store/chromadb:/data  # Update this path
    ```
 
 3. **Configure MCP in Your Development Environment**:
