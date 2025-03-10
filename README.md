@@ -15,6 +15,33 @@ Before using Anchoring, you must install these prerequisites and set up configur
 - [Docker](https://www.docker.com) - For running ChromaDB container
 - [OpenAI API key](https://platform.openai.com/api-keys) - For generating embeddings
 
+#### Platform-Specific Requirements
+
+**Windows:**
+- Microsoft Edge WebView2 (required for Tauri): `winget install Microsoft.EdgeWebView2Runtime`
+- Visual C++ Build Tools: Install from [Visual Studio downloads](https://visualstudio.microsoft.com/downloads/) (select "Desktop development with C++")
+- Chrome or Chromium browser for the web crawler functionality
+
+**Linux:**
+- WebKit2GTK and other system dependencies:
+  ```bash
+  # Debian/Ubuntu
+  sudo apt update
+  sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+  # Arch
+  sudo pacman -S webkit2gtk-4.1 base-devel curl wget file openssl appmenu-gtk-module libappindicator-gtk3 librsvg
+
+  # Fedora
+  sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget file libappindicator-gtk3-devel librsvg2-devel
+  sudo dnf group install "c-development"
+  ```
+- Chrome or Chromium browser (e.g., `sudo apt install chromium-browser` on Debian/Ubuntu)
+
+**macOS:**
+- Xcode Command Line Tools: `xcode-select --install`
+- Chrome or Chromium browser for the web crawler functionality
+
 ### Required Configuration
 
 These configuration steps are necessary regardless of which installation method you choose:
