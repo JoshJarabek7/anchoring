@@ -2,9 +2,71 @@
 
 Anchoring is a Tauri-based desktop application that provides version-pinned documentation snippets for developers, using Claude AI and ChromaDB for semantic search capabilities.
 
-## Quick Start
+## Initial Setup (Required for All Installation Methods)
 
-We provide convenient startup scripts that will check prerequisites, start ChromaDB, set up the MCP server, and launch the application:
+Before using Anchoring, you must install these prerequisites and set up configuration files:
+
+### Required Prerequisites
+
+- [Node.js](https://nodejs.org/) - For the frontend
+- [Python](https://python.org/) 3.10 through 3.12 - For the MCP server
+- [uv](https://github.com/astral-sh/uv) - Fast Python package installer and resolver (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- [Rust](https://www.rust-lang.org/tools/install) - Required for Tauri and some dependencies
+- [Docker](https://www.docker.com) - For running ChromaDB container
+- [OpenAI API key](https://platform.openai.com/api-keys) - For generating embeddings
+
+### Required Configuration
+
+These configuration steps are necessary regardless of which installation method you choose:
+
+1. **Set up MCP Server environment**:
+   ```bash
+   # Navigate to the MCP server directory
+   cd /path/to/mcp-server
+   
+   # Create and configure environment variables
+   cp .env.EXAMPLE .env
+   # Edit .env and add your OPENAI_API_KEY and other required values
+   ```
+
+2. **Set up ChromaDB Docker configuration**:
+   ```bash
+   # In the MCP server directory
+   cp docker-compose.EXAMPLE.yml docker-compose.yml
+   
+   # Edit docker-compose.yml to update the volume path for ChromaDB data
+   # Find and modify this line to specify where ChromaDB data should be stored:
+   # volumes:
+   #   - /path/to/chromadb/data:/chroma/chroma  # Update this path
+   ```
+
+3. **Configure MCP in Your Development Environment**:
+   
+   The MCP server needs to be configured in applications like Cursor to access the Claude AI capabilities:
+
+   ```
+   # For Cursor and other MCP clients, add this command to your MCP settings
+   uv run --python >=3.10,<3.13 --with chromadb --with mcp[cli] --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp run /path/to/mcp-server/app/server.py
+   ```
+
+   Note: Remove any quotes in the command when adding to Cursor MCP settings, or it will fail.
+
+4. **Set up Desktop App environment** (if needed):
+   ```bash
+   # Navigate to the desktop directory
+   cd /path/to/anchoring/desktop
+   cp .env.EXAMPLE .env
+   
+   # Configure environment variables
+   ```
+
+## Installation Options
+
+After completing the prerequisites and configuration steps above, you can choose one of these installation methods:
+
+### Option 1: Using the Startup Scripts
+
+We provide convenience scripts that help start the application:
 
 **On macOS/Linux:**
 ```bash
@@ -16,90 +78,41 @@ We provide convenient startup scripts that will check prerequisites, start Chrom
 start.bat
 ```
 
-The script will guide you through the setup process and prompt you to complete any necessary configuration.
+### Option 2: Manual Setup and Execution
 
-## Prerequisites
+If you prefer to set up and run the application manually, follow these additional steps:
 
-- [Node.js](https://nodejs.org/) - For the frontend
-- [Python](https://python.org/) 3.10 through 3.12 - For the MCP server
-- [uv](https://github.com/astral-sh/uv) - Fast Python package installer and resolver
-- [Rust](https://www.rust-lang.org/tools/install) - Required for Tauri and some dependencies
-- [Docker](https://www.docker.com) - For running ChromaDB container
-- [OpenAI API key](https://platform.openai.com/api-keys) - For generating embeddings
-
-Note: The start scripts will automatically:
-- Set up a Python virtual environment with a compatible version (3.10-3.12)
-- Install dependencies using uv
-- Install the MCP CLI in the virtual environment
-- Create configuration files from templates if needed
-
-## Manual Installation
-
-### 1. Install Prerequisites
-
-#### Rust
-```bash
-# macOS/Linux
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Windows
-# Visit https://www.rust-lang.org/tools/install and download rustup-init.exe
-```
-
-#### uv for Python
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### 2. Set Up the MCP Server
+#### 1. Start the ChromaDB Container
 
 ```bash
-# Navigate to the MCP server directory
-cd mcp-server
-
-# Install dependencies using uv
-uv add -r requirements.txt
-
-# Configure environment variables
-cp .env.EXAMPLE .env
-# Edit .env and add your OpenAI API key
-```
-
-### 3. Configure and Start ChromaDB Container
-
-```bash
-# Copy the example docker compose file
-cd mcp-server
-cp docker-compose.EXAMPLE.yml docker-compose.yml
-
-# Edit docker-compose.yml to update the volume path for ChromaDB data
-# Start the ChromaDB container
+# In the MCP server directory
+cd /path/to/mcp-server
 docker-compose up -d
 
 # Verify ChromaDB is running
 docker ps
 ```
 
-### 4. Install the MCP Server with Claude
+#### 2. Install the MCP Server with Claude
 
 ```bash
 # From the project root directory
-uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "mcp-server/app/server.py"
+uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "/path/to/anchoring/mcp-server/app/server.py"
 ```
 
-### 5. Set Up the Desktop Application
+#### 3. Set Up the Desktop Application
 
 ```bash
 # Navigate to the desktop directory
-cd ../desktop
+cd /path/to/anchoring/desktop
 
 # Install NPM dependencies
 npm install
 ```
 
-## Manual Running
+## Running the Application
 
-### 1. Make sure ChromaDB is running
+### 1. Ensure ChromaDB is Running
 
 ```bash
 # Check if ChromaDB container is running
@@ -110,22 +123,20 @@ cd mcp-server
 docker-compose up -d
 ```
 
-### 2. Add the MCP server to Cursor or other MCP clients by putting this command in your MCP settings
-
-```bash
-# For Cursor and other MCP clients, run the server with this command
-uv run --python >=3.10,<3.13 --with chromadb --with mcp[cli] --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp run /path/to/mcp-server/app/server.py
-```
-
-Make sure there are no quotes in the Cursor MCP command, or else it will fail.
-
-### 3. Start the Tauri development environment
+### 2. Start the Tauri Development Environment
 
 ```bash
 # From the desktop directory
 cd desktop
 npm run tauri dev
 ```
+
+## MCP Server Capabilities
+
+The MCP server provides two main tools for Claude and other compatible LLMs:
+
+1. `list-documentation-components` - Lists available documentation components for a category (language, framework, or library)
+2. `query-documentation-snippets` - Searches for documentation snippets based on natural language queries
 
 ## Using the Application
 
@@ -134,6 +145,11 @@ Once the application is running, you can:
 1. Use the crawler to fetch documentation
 2. Search for documentation snippets using natural language queries
 3. Save and organize knowledge bases
+
+## Using the MCP without running the Application
+
+Once you've crawled and processed your URLs and snippets within the desktop application, you no longer need to have the application running.
+However, the docker-compose file in mcp-server needs to be up-and-running in order for Cursor or Claude to query documentation snippets.
 
 ## Troubleshooting
 
@@ -151,6 +167,25 @@ If you see errors related to OpenAI embeddings:
 
 1. Verify your OPENAI_API_KEY in .env is valid and has sufficient credits
 2. Check internet access to connect to OpenAI's API
+3. Look for any rate limit messages in the error logs
+
+### Python Version Issues
+
+If you encounter Python version compatibility issues:
+
+1. Check your Python version: `python --version`
+2. Ensure it matches the range required (3.10-3.12) - Python 3.13 is not supported
+3. Consider using a tool like pyenv to install a compatible Python version
+4. uv should automatically search for installed versions within the accepted range, and if not, install them for you.
+
+### MCP Not Found in Claude
+
+If Claude can't see your MCP:
+
+1. Make sure the docker-compose container is running.
+2. Verify it was properly registered with `mcp install` command from above.
+3. Check the MCP list in Claude Desktop's developer settings
+4. Quit the Claude Desktop app and reopen. There's no refresh or reload button for MCP servers in the app and restarting it is required.
 
 ### Tauri Development Issues
 
@@ -178,8 +213,8 @@ If you're experiencing issues after updating:
 1. Make sure your ChromaDB server is running on the port specified in your `.env` files
 2. Delete any existing database file if needed:
    ```
-   # From the desktop directory
-   rm anchoring.db
+   # On MacOS
+   rm ~/Library/Application\ Support/com.gawntlet.anchoring/anchoring.db
    ```
 3. Restart the application
 
@@ -200,7 +235,7 @@ The application uses environment variables for configuration:
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `MCP_SERVER_NAME`: Name for the MCP server
 
-### Troubleshooting
+### Additional Troubleshooting
 
 If you encounter any issues:
 
