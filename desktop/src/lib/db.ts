@@ -994,16 +994,25 @@ export const cleanupDuplicateURLs = async (sessionId: number): Promise<number> =
     
     let deletedCount = 0;
     
-    // For each duplicated URL, keep only the first instance
+    // For each duplicated URL, keep the best instance (prioritize processed > crawled > pending > error)
     for (const dup of duplicates) {
       // Get all instances of this URL
       const instances = await db.select<CrawlURL[]>(
-        `SELECT * FROM urls WHERE session_id = ? AND url = ? ORDER BY id ASC`,
+        `SELECT * FROM urls WHERE session_id = ? AND url = ? ORDER BY 
+         CASE status
+           WHEN 'processed' THEN 1
+           WHEN 'crawled' THEN 2
+           WHEN 'pending' THEN 3
+           WHEN 'error' THEN 4
+           ELSE 5
+         END ASC, id ASC`,
         [sessionId, dup.url]
       );
       
-      // Keep the first one, delete the rest
+      // Keep the first one (best status), delete the rest
       if (instances.length > 1) {
+        console.log(`Found ${instances.length} duplicates of URL: ${dup.url}, keeping best version with status: ${instances[0].status}`);
+        
         const idsToDelete = instances.slice(1).map(u => u.id);
         const placeholders = idsToDelete.map(() => '?').join(',');
         

@@ -18,6 +18,10 @@ export const stopCrawling = (): void => {
   crawlingStopped = true;
   isCrawling = false;
   activeCrawlUrls = [];
+  // Clear all queues to ensure nothing continues
+  globalVisitedUrls.clear();
+  proxyQueue.length = 0;
+  activeProxies.clear();
   console.log("Crawling has been stopped. Current urls being processed will finish.");
 };
 
@@ -430,19 +434,19 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
   
   // Set up parallelism
   const DEFAULT_CONCURRENCY = 4; // Default to 4 parallel requests
-  const MAX_POSSIBLE_CONCURRENT = 1000; // Setting this to a very high number, effectively removing the limit
+  const MAX_SAFE_CONCURRENT = 20; // More reasonable maximum to avoid overwhelming
   
   // Determine concurrency based on config
   let concurrency = DEFAULT_CONCURRENCY;
   
   if (config.unlimitedParallelism) {
-    // Use a truly high number for unlimited parallelism
-    concurrency = 1000; 
-    console.log(`Crawler using unlimited parallelism (${concurrency} concurrent requests)`);
+    // Use a more reasonable "unlimited" value to avoid performance issues
+    concurrency = MAX_SAFE_CONCURRENT; 
+    console.log(`Crawler using high parallelism (${concurrency} concurrent requests)`);
   } else if (config.maxConcurrentRequests) {
-    // Use specified concurrency without capping
-    concurrency = config.maxConcurrentRequests;
-    console.log(`Crawler using ${concurrency} concurrent requests`);
+    // Cap at safe maximum to avoid performance degradation
+    concurrency = Math.min(config.maxConcurrentRequests, MAX_SAFE_CONCURRENT);
+    console.log(`Crawler using ${concurrency} concurrent requests (capped at ${MAX_SAFE_CONCURRENT})`);
   } else {
     console.log(`Crawler using default concurrency: ${concurrency} concurrent requests`);
   }
@@ -486,19 +490,22 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
     console.log(`Always adding start URL to queue: ${config.startUrl}`);
     queueSet.add(config.startUrl);
     
-    // Add them to the appropriate sets
+    // Add existing URLs to appropriate tracking sets
     let pendingCount = 0;
+    
+    // First, populate global tracking for ALL URLs to prevent duplicates across processes
     for (const urlObj of existingUrls) {
-      // Check if it's the start URL - we always want to crawl the start URL
+      // Always add to global tracking (including start URL)
+      globalVisitedUrls.add(urlObj.url);
+    }
+    
+    // Then process each URL for the current crawl session
+    for (const urlObj of existingUrls) {
+      // Check if it's the start URL - special case
       const isStartUrl = (urlObj.url === config.startUrl);
       
-      // Only add to global tracking if not the start URL
-      if (!isStartUrl) {
-        globalVisitedUrls.add(urlObj.url);
-      }
-      
       if ((urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed') && !isStartUrl) {
-        // If already processed and not the start URL, just mark as visited and don't recrawl
+        // If already processed and not the start URL, mark as visited and don't recrawl
         console.log(`Skipping already processed URL: ${urlObj.url} (status: ${urlObj.status})`);
         visited.add(urlObj.url);
       } else if (urlObj.status === 'pending' || isStartUrl) {
@@ -550,7 +557,7 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
   while ((queue.length > 0 || inProgress.size > 0) && !crawlingStopped) {
     // Log crawler status periodically
     if (queue.length > 0 || inProgress.size > 0) {
-      console.log(`Crawler status: ${inProgress.size} in progress, ${queue.length} queued, ${visited.size} visited, prefix: ${config.prefixPath}`);
+      console.log(`Crawler status: ${inProgress.size} in progress, ${queue.length} queued, ${visited.size} visited, ${globalVisitedUrls.size} globally tracked, prefix: ${config.prefixPath}`);
       
       // Detailed logging for in-progress URLs
       if (inProgress.size > 0) {
@@ -558,8 +565,20 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
       }
     }
     
+    // Check for stop signal before processing more URLs
+    if (crawlingStopped) {
+      console.log("Stop signal detected, exiting crawler processing loop");
+      break;
+    }
+    
     // Fill the processing queue up to concurrency limit
     while (inProgress.size < concurrency && queue.length > 0 && !crawlingStopped) {
+      // Check for stop signal before each URL
+      if (crawlingStopped) {
+        console.log("Stop signal detected during queue processing, breaking");
+        break;
+      }
+      
       const url = queue.shift()!;
       
       // Check if this is the start URL - special case
@@ -613,12 +632,14 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
           // Add to active crawl URLs
           activeCrawlUrls.push(currentUrl);
           
-          // Check if we should stop crawling
+          // Check if we should stop crawling - at the start of processing
           if (crawlingStopped) {
             console.log(`Skipping crawl of ${currentUrl} due to stop request`);
             inProgress.delete(currentUrl);
             const urlIndex = activeCrawlUrls.indexOf(currentUrl);
             if (urlIndex !== -1) activeCrawlUrls.splice(urlIndex, 1);
+            // Make sure this URL is properly tracked so we don't try to process it again
+            visited.add(currentUrl);
             return;
           }
           
@@ -629,9 +650,25 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
           if (!crawlingStopped) {
             // Add valid links to queue
             for (const link of newLinks) {
-              // Skip if we already know about this URL
-              if (visited.has(link) || inProgress.has(link) || globalVisitedUrls.has(link) || queue.includes(link)) {
-                console.log(`Skipping already known URL: ${link}`);
+              // IMPORTANT: Check global tracking first to prevent race conditions across processes
+              if (globalVisitedUrls.has(link)) {
+                console.log(`Skipping already tracked URL in global set: ${link}`);
+                continue;
+              }
+              
+              // Mark in global tracking immediately to prevent other crawlers from adding it
+              globalVisitedUrls.add(link);
+              
+              // Check local tracking after securing in global set
+              if (visited.has(link) || inProgress.has(link) || queue.includes(link)) {
+                console.log(`Skipping already known URL in local tracking: ${link}`);
+                continue;
+              }
+              
+              // Double check it matches crawl criteria
+              if (!shouldCrawlURL(link, config)) {
+                console.log(`URL doesn't match crawl criteria, skipping: ${link}`);
+                visited.add(link);
                 continue;
               }
               
@@ -639,14 +676,13 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
               try {
                 const urlObj = await getURLByUrl(config.sessionId, link);
                 
-                // If URL exists in any state, mark it as visited and don't add to queue again
+                // If URL exists in any state, mark it as visited
                 if (urlObj) {
                   console.log(`URL exists in DB with status ${urlObj.status}: ${link}`);
                   visited.add(link);
-                  globalVisitedUrls.add(link);
                   
-                  // Only add to queue if it's still pending
-                  if (urlObj.status === 'pending') {
+                  // Only add to queue if it's still pending and we should crawl pending
+                  if (urlObj.status === 'pending' && (!config.skipProcessedUrls || !config.crawlPendingOnly)) {
                     console.log(`Adding existing pending URL to queue: ${link}`);
                     if (!queue.includes(link)) {
                       queue.push(link);
@@ -663,20 +699,18 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
               // If we get here, URL is new and not in DB yet
               console.log(`Adding new URL to queue: ${link}`);
               
-              // Check if it's in queue before adding
-              if (!queue.includes(link)) {
-                queue.push(link);
-                
-                // Add to database with pending status
-                try {
-                  await addURL({
-                    session_id: config.sessionId,
-                    url: link,
-                    status: 'pending'
-                  });
-                } catch (err) {
-                  console.error(`Error adding URL to database: ${link}`, err);
-                }
+              // Add to queue
+              queue.push(link);
+              
+              // Add to database with pending status
+              try {
+                await addURL({
+                  session_id: config.sessionId,
+                  url: link,
+                  status: 'pending'
+                });
+              } catch (err) {
+                console.error(`Error adding URL to database: ${link}`, err);
               }
             }
           }
