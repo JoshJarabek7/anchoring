@@ -1,6 +1,6 @@
 # Anchoring
 
-Anchoring is a Tauri-based desktop application that provides version-pinned documentation snippets for developers, using Claude AI and ChromaDB for semantic search capabilities.
+Anchoring is a Tauri-based desktop application that provides version-pinned documentation snippets for developers, using OpenAI and ChromaDB for semantic search capabilities.
 
 ## Initial Setup (Required for All Installation Methods)
 
