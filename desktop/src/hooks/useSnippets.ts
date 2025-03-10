@@ -1,14 +1,59 @@
-import { useState } from 'react';
-import { ChromaClient } from '../lib/chroma-client';
+import { useState, useEffect } from 'react';
+import { FullDocumentationSnippet, getSelectedSession } from '../lib/db';
+import { createProviderWithKey } from '../lib/vector-db';
+import { ContextType } from '../lib/vector-db/provider';
 
 /**
  * Hook to manage snippets for a specific URL
  */
 export function useSnippets(apiKey: string) {
-  const [snippets, setSnippets] = useState<any[]>([]);
+  const [snippets, setSnippets] = useState<FullDocumentationSnippet[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+
+  // Initialize provider with session config
+  const getProvider = async () => {
+    const session = await getSelectedSession();
+    if (!session) {
+      throw new Error("No session selected. Please select a session first.");
+    }
+    
+    const provider = await createProviderWithKey(apiKey, session.context_type || ContextType.LOCAL);
+    await provider.initialize({
+      type: session.context_type || ContextType.LOCAL,
+      pineconeApiKey: session.pinecone_api_key,
+      pineconeEnvironment: session.pinecone_environment,
+      pineconeIndexName: session.pinecone_index
+    });
+    
+    return provider;
+  };
+
+  useEffect(() => {
+    async function loadSnippets() {
+      if (!apiKey) {
+        setError('API key is required');
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const provider = await getProvider();
+        const results = await provider.getDocumentsByFilters({}, 100); // Get first 100 snippets
+        setSnippets(results);
+      } catch (err) {
+        console.error('Error loading snippets:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load snippets');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadSnippets();
+  }, [apiKey]);
 
   /**
    * Fetch snippets for a specific URL
@@ -27,22 +72,15 @@ export function useSnippets(apiKey: string) {
       // Clear any previous snippets to avoid memory accumulation
       setSnippets([]);
       
-      // Create a new ChromaDB client
-      const chromaClient = new ChromaClient(apiKey);
-      await chromaClient.initialize();
-      
-      // Get snippets for the URL (limited to 50 for memory conservation)
-      const urlSnippets = await chromaClient.getSnippetsForUrl(url, 50);
+      // Create provider with session config
+      const provider = await getProvider();
+      const results = await provider.getDocumentsByFilters({ url: url }, 50);
       
       // Use functional state update to avoid stale closure issues
-      setSnippets(urlSnippets);
-      
-      // Release the chromaClient to free up memory
-      (chromaClient as any).client = null;
-      (chromaClient as any).collection = null;
+      setSnippets(results);
     } catch (err) {
       console.error('Error fetching snippets:', err);
-      setError('Failed to fetch snippets from ChromaDB');
+      setError('Failed to fetch snippets from VectorDB');
       setSnippets([]);
     } finally {
       setLoading(false);

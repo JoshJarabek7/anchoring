@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getURLs, updateURLStatus } from '../lib/db';
-import { ChromaClient } from '../lib/chroma-client';
+import { createProviderWithKey } from '../lib/vector-db';
+import { ContextType } from '../lib/vector-db/provider';
+import { getSession } from '../lib/db';
 
 interface UrlSnippetCount {
   url: string;
@@ -17,6 +18,24 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
   const [countLoading, setCountLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Initialize provider with session config
+  const getProvider = async () => {
+    const session = await getSession(sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    const provider = await createProviderWithKey(apiKey || '', session.context_type || ContextType.LOCAL);
+    await provider.initialize({
+      type: session.context_type || ContextType.LOCAL,
+      pineconeApiKey: session.pinecone_api_key,
+      pineconeEnvironment: session.pinecone_environment,
+      pineconeIndexName: session.pinecone_index
+    });
+    
+    return provider;
+  };
+
   // Load processed URLs from the database
   const loadProcessedUrls = async () => {
     if (!sessionId) return;
@@ -26,12 +45,14 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
       setError(null);
       
       // Get all URLs for the session
-      const allUrls = await getURLs(sessionId);
+      const provider = await getProvider();
+      const results = await provider.getDocumentsByFilters({});
       
       // Filter to only get processed URLs
-      const processed = allUrls
-        .filter(url => url.status === 'processed')
-        .map(url => url.url);
+      const processed = results
+        .map(doc => doc.source_url)
+        .filter(Boolean)
+        .filter(url => url.status === 'processed');
       
       setProcessedUrls(processed);
       
@@ -58,9 +79,7 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
     try {
       setCountLoading(true);
       
-      // Create ChromaDB client
-      const chromaClient = new ChromaClient(apiKey);
-      await chromaClient.initialize();
+      const provider = await getProvider();
       
       // Get counts for each URL - process in batches to avoid memory issues
       const BATCH_SIZE = 5;
@@ -73,7 +92,7 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
         for (const url of batchUrls) {
           try {
             // Use the new optimized method that only gets count without loading content
-            const count = await chromaClient.getSnippetCountForUrl(url);
+            const count = await provider.getSnippetCountForUrl(url);
             batchCounts.push({
               url,
               count: count
@@ -103,10 +122,6 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
           return updatedCounts;
         });
       }
-      
-      // Clean up resources
-      (chromaClient as any).client = null;
-      (chromaClient as any).collection = null;
     } catch (err) {
       console.error('Error loading snippet counts:', err);
     } finally {
@@ -123,16 +138,17 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
       setError(null);
       
       // Get all URLs for the session to find their IDs
-      const allUrls = await getURLs(sessionId);
+      const provider = await getProvider();
+      const results = await provider.getDocumentsByFilters({});
       
       // Find matching URLs and update their status
-      const urlsToUpdate = allUrls.filter(url => urls.includes(url.url));
+      const urlsToUpdate = results
+        .filter(doc => urls.includes(doc.source_url))
+        .map(doc => doc.source_url);
       
       // Update each URL status
       for (const url of urlsToUpdate) {
-        if (url.id) {
-          await updateURLStatus(url.id, 'processed');
-        }
+        await provider.updateURLStatus(url, 'processed');
       }
       
       // Add the new processed URLs to our state

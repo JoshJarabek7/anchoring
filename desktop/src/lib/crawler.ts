@@ -333,7 +333,7 @@ export const crawlURL = async (url: string, config: CrawlerConfig): Promise<stri
     const existingUrl = await getURLByUrl(config.sessionId, url);
     
     // If URL already exists and is already processed, don't reprocess it
-    if (existingUrl && (existingUrl.status === 'crawled' || existingUrl.status === 'processed' || existingUrl.status === 'error')) {
+    if (existingUrl && (existingUrl.status === 'crawled' || existingUrl.status === 'processed')) {
       console.log(`Skipping already processed URL: ${url} (status: ${existingUrl.status})`);
       return [];
     }
@@ -574,7 +574,7 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
         const isStartUrl = (url === config.startUrl);
 
         // If URL exists and is already processed, mark as visited and skip (unless it's the start URL)
-        if (!isStartUrl && urlObj && (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed')) {
+        if (!isStartUrl && urlObj && (urlObj.status === 'crawled' || urlObj.status === 'processed')) {
           console.log(`Skipping already processed URL from DB check: ${url} (status: ${urlObj.status})`);
           visited.add(url);
           globalVisitedUrls.add(url);
@@ -632,9 +632,9 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
                   visited.add(link);
                   globalVisitedUrls.add(link);
                   
-                  // Only add to queue if it's still pending
-                  if (urlObj.status === 'pending') {
-                    console.log(`Adding existing pending URL to queue: ${link}`);
+                  // Only add to queue if it's still pending or errored
+                  if (urlObj.status === 'pending' || urlObj.status === 'error') {
+                    console.log(`Adding existing ${urlObj.status} URL to queue: ${link}`);
                     if (!queue.includes(link)) {
                       queue.push(link);
                     }

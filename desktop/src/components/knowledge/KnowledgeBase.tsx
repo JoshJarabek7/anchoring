@@ -15,9 +15,11 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, BookOpen, Code, Library, Info, Database } from "lucide-react";
-import { ChromaClient } from "@/lib/chroma-client";
-import { DocumentationCategory } from "@/lib/db";
-import { getUserSettings } from "@/lib/db";
+import { createProviderWithKey } from '@/lib/vector-db';
+import { ContextType } from '@/lib/vector-db/provider';
+import { FullDocumentationSnippet } from '@/lib/db';
+import { getUserSettings, getSelectedSession } from "@/lib/db";
+import { generateEmbedding } from '@/lib/openai';
 
 interface DocSnippet {
   id: string;
@@ -32,7 +34,14 @@ interface DocSnippet {
 interface SearchResult {
   id: string;
   score: number;
-  snippet: DocSnippet;
+  snippet: {
+    title: string;
+    content: string;
+    source: string;
+    category: "language" | "framework" | "library";
+    name: string;
+    version?: string;
+  };
 }
 
 interface KnowledgeBaseProps {
@@ -62,6 +71,10 @@ export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps
   const [hasMoreDocs, setHasMoreDocs] = useState(false);
   const [loadingMoreDocs, setLoadingMoreDocs] = useState(false);
   const docsPerPage = 20; // Number of docs to load per page
+  
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [snippets, setSnippets] = useState<FullDocumentationSnippet[]>([]);
   
   // Load API key from multiple sources if needed
   useEffect(() => {
@@ -105,22 +118,22 @@ export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps
       }
       
       try {
-        console.log("Running diagnostic ChromaDB check...");
-        const chromaClient = new ChromaClient(effectiveApiKey);
-        await chromaClient.initialize();
-        
-        // Run our debug inspection
-        await chromaClient.debugInspectCollection(20);
+        console.log("Running vector DB diagnostics...");
+        const provider = await initializeProvider();
+        if (!provider) return;
+
+        const results = await provider.getDocumentsByFilters({}, 100); // Get first 100 snippets
+        setSnippets(results);
         
         // Try getting components for each category
         console.log("Trying to get language components...");
-        await chromaClient.getAvailableComponents(DocumentationCategory.LANGUAGE);
+        await provider.getDocumentsByFilters({ category: "language" }, 10);
         
         console.log("Trying to get framework components...");
-        await chromaClient.getAvailableComponents(DocumentationCategory.FRAMEWORK);
+        await provider.getDocumentsByFilters({ category: "framework" }, 10);
         
         console.log("Trying to get library components...");
-        await chromaClient.getAvailableComponents(DocumentationCategory.LIBRARY);
+        await provider.getDocumentsByFilters({ category: "library" }, 10);
       } catch (err) {
         console.error("Error during diagnostics:", err);
       }
@@ -130,6 +143,25 @@ export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps
       runDebugDiagnostics();
     }
   }, [effectiveApiKey]);
+
+  // Initialize with session's vector DB
+  const initializeProvider = async () => {
+    const session = await getSelectedSession();
+    if (!session) {
+      toast.error("No session selected. Please select a session first.");
+      return null;
+    }
+    
+    const provider = await createProviderWithKey(effectiveApiKey, session.context_type || ContextType.LOCAL);
+    await provider.initialize({
+      type: session.context_type || ContextType.LOCAL,
+      pineconeApiKey: session.pinecone_api_key,
+      pineconeEnvironment: session.pinecone_environment,
+      pineconeIndexName: session.pinecone_index
+    });
+    
+    return provider;
+  };
 
   // Vector search
   const handleVectorSearch = async () => {
@@ -147,23 +179,29 @@ export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps
     setSearchResults([]);
     
     try {
-      console.log(`Starting vector search with API key (length: ${effectiveApiKey.length})`);
+      const provider = await initializeProvider();
+      if (!provider) return;
+
+      const embedding = await generateEmbedding(searchQuery, effectiveApiKey, 'text-embedding-3-large', 3072);
+      const results = await provider.searchDocuments(embedding, {}, 10);
       
-      // Import the search function
-      const { vectorSearch } = await import("@/lib/knowledge");
+      // Convert results to SearchResult format
+      const formattedResults: SearchResult[] = results.map(doc => ({
+        id: doc.snippet_id.toString(),
+        score: doc.score || 0,
+        snippet: {
+          title: doc.title || 'Documentation',
+          content: doc.content || '',
+          source: doc.source_url || '',
+          category: doc.category,
+          name: doc.language || doc.framework || doc.library || '',
+          version: doc.language_version || doc.framework_version || doc.library_version || undefined
+        }
+      }));
       
-      // Search across all content (not filtered by session)
-      const results = await vectorSearch(searchQuery, effectiveApiKey);
+      setSearchResults(formattedResults);
       
-      // Log the scores to debug
-      if (results.length > 0) {
-        console.log("Search results received with scores:", 
-          results.map(r => ({ id: r.id, score: r.score })));
-      }
-      
-      setSearchResults(results);
-      
-      if (results.length === 0) {
+      if (formattedResults.length === 0) {
         toast.info("No results found. Try a different query.");
       }
     } catch (error) {
@@ -218,29 +256,40 @@ export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps
     }
     
     try {
-      console.log(`${loadMore ? "Loading more docs" : "Starting doc search"} with API key (length: ${effectiveApiKey.length})`);
-      
-      // Import the doc search function
-      const { searchDocSnippets } = await import("@/lib/knowledge");
-      
+      const provider = await initializeProvider();
+      if (!provider) return;
+
       const currentPage = loadMore ? docPage + 1 : 1;
       const limit = docsPerPage;
       
-      const results = await searchDocSnippets({
+      const results = await provider.getDocumentsByFilters({
         query: docSearchQuery,
         category: selectedCategory as "language" | "framework" | "library" | undefined,
         componentName: selectedComponent,
         componentVersion: selectedVersion,
-        apiKey: effectiveApiKey,
         limit,
         page: currentPage
-      });
+      }, 10);
       
+      // Convert results to SearchResult format
+      const formattedResults: SearchResult[] = results.map(doc => ({
+        id: doc.snippet_id.toString(),
+        score: doc.score || 0,
+        snippet: {
+          title: doc.title || 'Documentation',
+          content: doc.content || '',
+          source: doc.source_url || '',
+          category: doc.category,
+          name: doc.language || doc.framework || doc.library || '',
+          version: doc.language_version || doc.framework_version || doc.library_version || undefined
+        }
+      }));
+
       if (loadMore) {
         // Append results to existing ones
-        setDocSearchResults(prev => [...prev, ...results]);
+        setDocSearchResults(prev => [...prev, ...formattedResults]);
       } else {
-        setDocSearchResults(results);
+        setDocSearchResults(formattedResults);
       }
       
       // Update pagination state
@@ -258,7 +307,7 @@ export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps
         console.log(`Retrieved ${results.length} snippets, page ${currentPage}. Total shown: ${(loadMore ? docSearchResults.length + results.length : results.length)}`);
       }
     } catch (error) {
-      console.error("Error searching documentation snippets:", error);
+      console.error("Error during doc search:", error);
       toast.error(`Search failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       if (loadMore) {
@@ -281,11 +330,17 @@ export default function KnowledgeBase({ apiKey: propApiKey }: KnowledgeBaseProps
     const loadComponents = async () => {
       setIsLoadingComponents(true);
       try {
-        // Import the list components function
-        const { listDocComponents } = await import("@/lib/knowledge");
+        const provider = await initializeProvider();
+        if (!provider) return;
         
-        const components = await listDocComponents(selectedCategory as "language" | "framework" | "library", effectiveApiKey);
-        setAvailableComponents(components);
+        const components = await provider.getDocumentsByFilters({ 
+          category: selectedCategory as "language" | "framework" | "library"
+        }, 10);
+        const mappedComponents = components.map(doc => ({
+          name: doc.language || doc.framework || doc.library || '',
+          version: doc.language_version || doc.framework_version || doc.library_version || ''
+        })).filter(c => c.name && c.version); // Only keep components with both name and version
+        setAvailableComponents(mappedComponents);
         
         // Reset selections
         setSelectedComponent(undefined);

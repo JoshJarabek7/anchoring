@@ -98,6 +98,195 @@ export const runMigrations = async (dbConn: Database) => {
             throw error;
           }
         }
+      },
+      {
+        name: 'create_vector_db_settings',
+        up: async () => {
+          console.log("Running migration: create_vector_db_settings");
+          
+          try {
+            await dbConn.execute(`
+              CREATE TABLE IF NOT EXISTS vector_db_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pinecone_api_key TEXT,
+                pinecone_environment TEXT,
+                pinecone_index TEXT,
+                pinecone_project TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+              );
+            `);
+
+            // Create trigger to update updated_at timestamp
+            await dbConn.execute(`
+              CREATE TRIGGER IF NOT EXISTS vector_db_settings_updated_at 
+              AFTER UPDATE ON vector_db_settings
+              BEGIN
+                UPDATE vector_db_settings SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = NEW.id;
+              END;
+            `);
+
+            console.log("Created vector_db_settings table");
+          } catch (error) {
+            console.error("Error in migration:", error);
+            throw error;
+          }
+        }
+      },
+      {
+        name: 'remove_pinecone_project',
+        up: async () => {
+          console.log("Running migration: remove_pinecone_project");
+          
+          try {
+            // Create a new table without pinecone_project
+            await dbConn.execute(`
+              CREATE TABLE IF NOT EXISTS vector_db_settings_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pinecone_api_key TEXT,
+                pinecone_environment TEXT,
+                pinecone_index TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+              );
+            `);
+
+            // Copy data from old table to new table
+            await dbConn.execute(`
+              INSERT INTO vector_db_settings_new (id, pinecone_api_key, pinecone_environment, pinecone_index, created_at, updated_at)
+              SELECT id, pinecone_api_key, pinecone_environment, pinecone_index, created_at, updated_at 
+              FROM vector_db_settings;
+            `);
+
+            // Drop old table and rename new one
+            await dbConn.execute('DROP TABLE vector_db_settings;');
+            await dbConn.execute('ALTER TABLE vector_db_settings_new RENAME TO vector_db_settings;');
+
+            // Recreate the trigger on the new table
+            await dbConn.execute(`
+              CREATE TRIGGER IF NOT EXISTS vector_db_settings_updated_at 
+              AFTER UPDATE ON vector_db_settings
+              BEGIN
+                UPDATE vector_db_settings SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = NEW.id;
+              END;
+            `);
+
+            console.log("Removed pinecone_project from vector_db_settings table");
+          } catch (error) {
+            console.error("Error in migration:", error);
+            throw error;
+          }
+        }
+      },
+      {
+        name: 'create_vector_db_config',
+        up: async () => {
+          console.log("Running migration: create_vector_db_config");
+          
+          try {
+            await dbConn.execute(`
+              CREATE TABLE IF NOT EXISTS vector_db_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL UNIQUE,
+                provider_type TEXT NOT NULL,
+                config JSON NOT NULL CHECK(json_valid(config)),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE
+              );
+            `);
+
+            // Create trigger to update updated_at timestamp
+            await dbConn.execute(`
+              CREATE TRIGGER IF NOT EXISTS vector_db_config_updated_at 
+              AFTER UPDATE ON vector_db_config
+              BEGIN
+                UPDATE vector_db_config SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = NEW.id;
+              END;
+            `);
+
+            // Create index on session_id for faster lookups
+            await dbConn.execute(`
+              CREATE INDEX IF NOT EXISTS idx_vector_db_config_session_id 
+              ON vector_db_config(session_id);
+            `);
+
+            console.log("Created vector_db_config table");
+          } catch (error) {
+            console.error("Error in migration:", error);
+            throw error;
+          }
+        }
+      },
+      {
+        name: 'update_vector_db_config_schema',
+        up: async () => {
+          console.log("Running migration: update_vector_db_config_schema");
+          
+          try {
+            // Create providers table
+            await dbConn.execute(`
+              CREATE TABLE IF NOT EXISTS vector_db_providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                version TEXT NOT NULL,
+                schema JSON NOT NULL CHECK(json_valid(schema)),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+              );
+            `);
+
+            // Create configurations table
+            await dbConn.execute(`
+              CREATE TABLE IF NOT EXISTS vector_db_configurations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                provider_id INTEGER NOT NULL,
+                config JSON NOT NULL CHECK(json_valid(config)),
+                is_default BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(provider_id) REFERENCES vector_db_providers(id)
+              );
+            `);
+
+            // Create session mappings table
+            await dbConn.execute(`
+              CREATE TABLE IF NOT EXISTS session_vector_db_mappings (
+                session_id INTEGER NOT NULL,
+                config_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(session_id, config_id),
+                FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY(config_id) REFERENCES vector_db_configurations(id)
+              );
+            `);
+
+            // Create indexes
+            await dbConn.execute(`
+              CREATE INDEX IF NOT EXISTS idx_vector_db_providers_name ON vector_db_providers(name);
+              CREATE INDEX IF NOT EXISTS idx_vector_db_configurations_provider ON vector_db_configurations(provider_id);
+              CREATE INDEX IF NOT EXISTS idx_session_vector_db_mappings_session ON session_vector_db_mappings(session_id);
+            `);
+
+            // Create triggers for updated_at
+            await dbConn.execute(`
+              CREATE TRIGGER IF NOT EXISTS vector_db_configurations_updated_at 
+              AFTER UPDATE ON vector_db_configurations
+              BEGIN
+                UPDATE vector_db_configurations SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = NEW.id;
+              END;
+            `);
+
+            console.log("Created new vector DB schema tables");
+          } catch (error) {
+            console.error("Error in migration:", error);
+            throw error;
+          }
+        }
       }
     ];
     

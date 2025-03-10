@@ -137,6 +137,16 @@ const createTables = async () => {
       )
     `);
 
+    await dbConn.execute(`
+      CREATE TABLE IF NOT EXISTS vector_db_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL UNIQUE,
+        provider_type TEXT NOT NULL,
+        config TEXT NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE
+      )
+    `);
+
     console.log("All database tables created successfully");
   } catch (error) {
     console.error("Error creating database tables:", error);
@@ -238,6 +248,21 @@ export interface DocumentationSnippet {
   source_url?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+// Vector DB Settings Types
+export interface VectorDBSettings {
+  id?: number;
+  pinecone_api_key?: string;
+  pinecone_environment?: string;
+  pinecone_index?: string;
+}
+
+// Vector DB Config Types
+export interface VectorDBConfig {
+  session_id: number;
+  provider_type: string;
+  config: string; // JSON stringified config specific to the provider type
 }
 
 // Proxy Operations
@@ -1047,7 +1072,7 @@ export const cleanupDuplicateURLs = async (sessionId: number): Promise<number> =
 // Delete all URLs for a session
 export const deleteAllURLs = async (sessionId: number): Promise<number> => {
   try {
-    await initDB();
+    const dbConn = await initDB();
     
     const result = await dbConn.execute(
       `DELETE FROM urls WHERE session_id = $1`,
@@ -1214,6 +1239,276 @@ export const importSession = async (importData: any): Promise<CrawlSession> => {
     return newSession;
   } catch (error) {
     console.error("Error importing session:", error);
+    throw error;
+  }
+};
+
+// Vector DB Settings Operations
+export const saveVectorDBSettings = async (settings: VectorDBSettings) => {
+  const dbConn = await initDB();
+  console.log("Saving vector DB settings:", settings);
+  
+  // Check if any settings exist
+  const existing = await dbConn.select<VectorDBSettings[]>('SELECT * FROM vector_db_settings LIMIT 1');
+  console.log("Existing vector DB settings:", existing.length ? existing[0] : "None");
+  
+  if (existing.length === 0) {
+    // Create new settings
+    console.log("No existing vector DB settings found, creating new settings");
+    const result = await dbConn.execute(
+      'INSERT INTO vector_db_settings (pinecone_api_key, pinecone_environment, pinecone_index) VALUES (?, ?, ?)',
+      [
+        settings.pinecone_api_key || '', 
+        settings.pinecone_environment || '',
+        settings.pinecone_index || ''
+      ]
+    );
+    
+    console.log("Vector DB settings created with ID:", result.lastInsertId);
+    return {
+      ...settings,
+      id: result.lastInsertId
+    };
+  }
+
+  // Update existing settings with non-null values
+  const updates = [];
+  const params = [];
+  
+  if (settings.pinecone_api_key !== undefined) {
+    updates.push('pinecone_api_key = ?');
+    params.push(settings.pinecone_api_key);
+  }
+  
+  if (settings.pinecone_environment !== undefined) {
+    updates.push('pinecone_environment = ?');
+    params.push(settings.pinecone_environment);
+  }
+  
+  if (settings.pinecone_index !== undefined) {
+    updates.push('pinecone_index = ?');
+    params.push(settings.pinecone_index);
+  }
+  
+  console.log("Updating vector DB settings with fields:", updates);
+  console.log("Update parameters:", params);
+  
+  if (updates.length > 0) {
+    params.push(existing[0].id);
+    const query = `UPDATE vector_db_settings SET ${updates.join(', ')} WHERE id = ?`;
+    console.log("Update query:", query);
+    
+    const result = await dbConn.execute(query, params);
+    console.log("Update result:", result);
+  } else {
+    console.log("No fields to update");
+  }
+  
+  // Get the updated settings to confirm the changes
+  const updatedSettings = await getVectorDBSettings();
+  console.log("Updated vector DB settings:", updatedSettings);
+  
+  return {
+    ...existing[0],
+    ...settings,
+  };
+};
+
+export const getVectorDBSettings = async () => {
+  const dbConn = await initDB();
+  console.log("Fetching vector DB settings from database");
+  const result = await dbConn.select<VectorDBSettings[]>(
+    'SELECT id, pinecone_api_key, pinecone_environment, pinecone_index FROM vector_db_settings LIMIT 1'
+  );
+  
+  console.log("Raw vector DB settings from database:", JSON.stringify(result, null, 2));
+  
+  if (result.length === 0) {
+    const defaultSettings = {
+      pinecone_api_key: '',
+      pinecone_environment: '',
+      pinecone_index: ''
+    };
+    console.log("No vector DB settings found, returning defaults:", defaultSettings);
+    return defaultSettings;
+  }
+  
+  const settings = {
+    ...result[0],
+    pinecone_api_key: result[0].pinecone_api_key || '',
+    pinecone_environment: result[0].pinecone_environment || '',
+    pinecone_index: result[0].pinecone_index || ''
+  };
+  
+  console.log("Retrieved vector DB settings from database:", settings);
+  return settings;
+};
+
+// Add new interfaces and functions for the new system
+export interface VectorDBProvider {
+  id: number;
+  name: string;
+  version: string;
+  schema: Record<string, any>;
+  created_at: string;
+}
+
+export interface VectorDBConfiguration {
+  id: number;
+  name: string;
+  provider_id: number;
+  config: Record<string, any>;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionVectorDBMapping {
+  session_id: number;
+  config_id: number;
+  created_at: string;
+}
+
+export const registerVectorDBProvider = async (
+  name: string,
+  version: string,
+  schema: Record<string, any>
+): Promise<VectorDBProvider> => {
+  const dbConn = await initDB();
+  
+  try {
+    const result = await dbConn.execute(
+      'INSERT INTO vector_db_providers (name, version, schema) VALUES (?, ?, ?)',
+      [name, version, JSON.stringify(schema)]
+    );
+    
+    return {
+      id: result.lastInsertId,
+      name,
+      version,
+      schema,
+      created_at: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error registering vector DB provider:', error);
+    throw error;
+  }
+};
+
+export const getVectorDBProviders = async (): Promise<VectorDBProvider[]> => {
+  const dbConn = await initDB();
+  
+  try {
+    const result = await dbConn.select<VectorDBProvider[]>(
+      'SELECT * FROM vector_db_providers'
+    );
+    
+    return result.map(provider => ({
+      ...provider,
+      schema: JSON.parse(provider.schema as unknown as string)
+    }));
+  } catch (error) {
+    console.error('Error getting vector DB providers:', error);
+    throw error;
+  }
+};
+
+export const createVectorDBConfiguration = async (
+  name: string,
+  providerId: number,
+  config: Record<string, any>,
+  isDefault: boolean = false
+): Promise<VectorDBConfiguration> => {
+  const dbConn = await initDB();
+  
+  try {
+    // If this is set as default, unset any existing defaults for this provider
+    if (isDefault) {
+      await dbConn.execute(
+        'UPDATE vector_db_configurations SET is_default = 0 WHERE provider_id = ?',
+        [providerId]
+      );
+    }
+    
+    const result = await dbConn.execute(
+      'INSERT INTO vector_db_configurations (name, provider_id, config, is_default) VALUES (?, ?, ?, ?)',
+      [name, providerId, JSON.stringify(config), isDefault ? 1 : 0]
+    );
+    
+    return {
+      id: result.lastInsertId,
+      name,
+      provider_id: providerId,
+      config,
+      is_default: isDefault,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error creating vector DB configuration:', error);
+    throw error;
+  }
+};
+
+export const getVectorDBConfigurations = async (): Promise<VectorDBConfiguration[]> => {
+  const dbConn = await initDB();
+  
+  try {
+    const result = await dbConn.select<VectorDBConfiguration[]>(
+      'SELECT * FROM vector_db_configurations'
+    );
+    
+    return result.map(config => ({
+      ...config,
+      config: JSON.parse(config.config as unknown as string)
+    }));
+  } catch (error) {
+    console.error('Error getting vector DB configurations:', error);
+    throw error;
+  }
+};
+
+export const setSessionVectorDBConfig = async (
+  sessionId: number,
+  configId: number
+): Promise<void> => {
+  const dbConn = await initDB();
+  
+  try {
+    await dbConn.execute(
+      'INSERT OR REPLACE INTO session_vector_db_mappings (session_id, config_id) VALUES (?, ?)',
+      [sessionId, configId]
+    );
+  } catch (error) {
+    console.error('Error setting session vector DB config:', error);
+    throw error;
+  }
+};
+
+export const getSessionVectorDBConfig = async (
+  sessionId: number
+): Promise<VectorDBConfiguration | null> => {
+  const dbConn = await initDB();
+  
+  try {
+    const result = await dbConn.select<VectorDBConfiguration[]>(
+      `SELECT c.* 
+       FROM vector_db_configurations c
+       JOIN session_vector_db_mappings m ON c.id = m.config_id
+       WHERE m.session_id = ?`,
+      [sessionId]
+    );
+    
+    if (result.length === 0) {
+      return null;
+    }
+    
+    return {
+      ...result[0],
+      config: JSON.parse(result[0].config as unknown as string)
+    };
+  } catch (error) {
+    console.error('Error getting session vector DB config:', error);
     throw error;
   }
 };

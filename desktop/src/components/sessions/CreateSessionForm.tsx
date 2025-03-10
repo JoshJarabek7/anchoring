@@ -7,7 +7,9 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
-import { createSession, CrawlSession } from "../../lib/db";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { createSession, CrawlSession, getVectorDBSettings } from "../../lib/db";
+import { configureSessionVectorDB } from "../../lib/vector-db/service";
 
 interface CreateSessionFormProps {
   onSessionCreated: (session: CrawlSession) => void;
@@ -17,6 +19,9 @@ interface CreateSessionFormProps {
 const formSchema = z.object({
   title: z.string().min(1, "Title is required"),
   version: z.string().optional(),
+  vectorDb: z.enum(["local", "shared"], {
+    required_error: "Please select a vector database",
+  }),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -28,12 +33,14 @@ export default function CreateSessionForm({
   const [submitting, setSubmitting] = useState(false);
   const [titleValue, setTitleValue] = useState("");
   const [versionValue, setVersionValue] = useState("");
+  const [vectorDbValue, setVectorDbValue] = useState<"local" | "shared">("local");
   
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "",
       version: "",
+      vectorDb: "local",
     },
     mode: "all",
   });
@@ -51,12 +58,29 @@ export default function CreateSessionForm({
       // Create session with manually prepared data
       const sessionData = {
         title: titleValue.trim(),
-        version: versionValue.trim(),
-        chroma_path: "chroma" // Default chroma path
+        version: versionValue.trim()
       };
       
       console.log("Submitting session data:", sessionData);
       const session = await createSession(sessionData);
+      
+      // Configure vector DB for the session
+      const vectorDbType = vectorDbValue;
+      const vectorDbSettings = await getVectorDBSettings();
+      
+      if (vectorDbType === 'local') {
+        await configureSessionVectorDB(session.id!, 'chroma', {
+          host: 'localhost',
+          port: 8000,
+          apiKey: vectorDbSettings.pinecone_api_key // We use the same API key for OpenAI embeddings
+        });
+      } else {
+        await configureSessionVectorDB(session.id!, 'pinecone', {
+          apiKey: vectorDbSettings.pinecone_api_key,
+          environment: vectorDbSettings.pinecone_environment,
+          indexName: vectorDbSettings.pinecone_index
+        });
+      }
       
       console.log("Session created successfully:", session);
       onSessionCreated(session);
@@ -111,8 +135,30 @@ export default function CreateSessionForm({
               }}
             />
           </div>
-          
-          {/* ChromaDB path field removed - no longer needed */}
+
+          <div className="space-y-2">
+            <Label htmlFor="vectorDb">Vector Database</Label>
+            <Select
+              value={vectorDbValue}
+              onValueChange={(value: "local" | "shared") => {
+                setVectorDbValue(value);
+                form.setValue("vectorDb", value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a vector database" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local ChromaDB</SelectItem>
+                <SelectItem value="shared">Shared Pinecone DB</SelectItem>
+              </SelectContent>
+            </Select>
+            {form.formState.errors.vectorDb && (
+              <p className="text-sm text-red-500">
+                {form.formState.errors.vectorDb.message}
+              </p>
+            )}
+          </div>
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button 

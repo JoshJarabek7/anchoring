@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import { createProviderWithKey } from '@/lib/vector-db';
+import { ContextType } from '@/lib/vector-db/provider';
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,8 +9,7 @@ import { Label } from "@/components/ui/label";
 
 import { ProcessingStatus, DocumentSource, processBatch, TechDetails } from "@/lib/pipeline";
 import { MarkdownCleanupValues } from "@/types/forms";
-import { DocumentationCategory, FullDocumentationSnippet } from "@/lib/db";
-import { ChromaClient } from "@/lib/chroma-client";
+import { DocumentationCategory, FullDocumentationSnippet, getSession } from "@/lib/db";
 import ProcessingOptions from "./ProcessingOptions";
 
 interface ProcessingPipelineProps {
@@ -29,7 +30,7 @@ interface ProcessingPipelineProps {
 export default function ProcessingPipeline({
   urls,
   apiKey,
-  // sessionId, - Not used yet
+  sessionId,
   category,
   language,
   languageVersion,
@@ -49,6 +50,8 @@ export default function ProcessingPipeline({
   const processedUrlsRef = useRef(new Set<string>());
   const [isCancelling, setIsCancelling] = useState(false);
   const processingCancelRef = useRef(false);
+  const [status, setStatus] = useState('Processing');
+  const [error, setError] = useState<string | null>(null);
 
   // Cleanup effect is no longer needed since toasts have proper durations
   useEffect(() => {
@@ -125,20 +128,28 @@ export default function ProcessingPipeline({
       setShowOptions(false);
       setProcessing(true);
 
-      // Note: apiKey is already validated at the beginning of this function
-      console.log("OpenAI API key (truncated):", `${apiKey.substring(0, 3)}...${apiKey.substring(apiKey.length - 3)}`);
-      
-      // Create a new ChromaDB client (now using HTTP connection)
-      console.log("Creating ChromaDB client");
-      const chromaClient = new ChromaClient(apiKey);
-      console.log("Initializing ChromaDB client...");
+      // Get the session configuration
+      const session = await getSession(sessionId);
+      if (!session) {
+        throw new Error("Session not found");
+      }
+
+      // Create provider with session's context type
+      console.log("Creating vector DB provider");
+      const provider = await createProviderWithKey(apiKey, session.context_type || ContextType.LOCAL);
+      console.log("Initializing vector DB provider...");
       
       try {
-        await chromaClient.initialize();
-        console.log("✅ ChromaDB client initialized");
+        await provider.initialize({
+          type: session.context_type || ContextType.LOCAL,
+          pineconeApiKey: session.pinecone_api_key,
+          pineconeEnvironment: session.pinecone_environment,
+          pineconeIndexName: session.pinecone_index
+        });
+        console.log("✅ Vector DB provider initialized");
       } catch (error) {
-        console.error("ERROR initializing ChromaDB client:", error);
-        toast.error(`Error connecting to ChromaDB: ${error instanceof Error ? error.message : String(error)}`);
+        console.error("ERROR initializing vector DB provider:", error);
+        toast.error(`Error connecting to vector DB: ${error instanceof Error ? error.message : String(error)}`);
         setProcessing(false);
         return;
       }
@@ -168,7 +179,7 @@ export default function ProcessingPipeline({
         sourcesToProcess,
         techDetails,
         apiKey,
-        chromaClient,
+        provider,
         {
           cleanupModel: options.model,
           temperature: options.temperature,
@@ -213,8 +224,8 @@ export default function ProcessingPipeline({
         }
       );
     } catch (error) {
-      console.error("ERROR starting processing:", error);
-      // Only log error, no toast needed
+      console.error("Failed to start processing:", error);
+      toast.error(`Processing failed: ${error instanceof Error ? error.message : String(error)}`);
       setProcessing(false);
     }
   };
@@ -228,6 +239,51 @@ export default function ProcessingPipeline({
     setProcessing(false);
     setIsCancelling(false);
     onCancel();
+  };
+
+  const processDocuments = async (documents: FullDocumentationSnippet[]) => {
+    if (!apiKey) {
+      console.error('No API key provided');
+      return;
+    }
+
+    try {
+      setStatus('Processing');
+      setProgress(0);
+
+      // Get the session configuration
+      const session = await getSession(sessionId);
+      if (!session) {
+        throw new Error("Session not found");
+      }
+
+      // Initialize vector DB provider with session config
+      const provider = await createProviderWithKey(apiKey, session.context_type || ContextType.LOCAL);
+      await provider.initialize({
+        type: session.context_type || ContextType.LOCAL,
+        pineconeApiKey: session.pinecone_api_key,
+        pineconeEnvironment: session.pinecone_environment,
+        pineconeIndexName: session.pinecone_index
+      });
+
+      // Process documents in batches
+      const batchSize = 5;
+      for (let i = 0; i < documents.length; i += batchSize) {
+        const batch = documents.slice(i, i + batchSize);
+        await provider.addDocuments(batch);
+        
+        // Update progress
+        const newProgress = Math.min(((i + batchSize) / documents.length) * 100, 100);
+        setProgress(newProgress);
+      }
+
+      setStatus('Complete');
+      if (onComplete) onComplete([{ url: '', snippets: documents }]);
+    } catch (error) {
+      console.error('Error processing documents:', error);
+      setStatus('Error');
+      setError(error instanceof Error ? error.message : 'Unknown error occurred');
+    }
   };
 
   return (
