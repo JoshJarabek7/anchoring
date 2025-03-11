@@ -190,8 +190,8 @@ export async function processBatch(
   
   // Process documents in parallel with concurrency control
   const processBatchInParallel = async () => {
-    // Use user-specified concurrency or default to 4
-    const MAX_CONCURRENT = options.maxConcurrency || 4;
+    // Use user-specified concurrency or default to 2 (reduced to avoid DB connection pool exhaustion)
+    const MAX_CONCURRENT = options.maxConcurrency || 2;
     console.log(`Using max concurrency: ${MAX_CONCURRENT}`);
     
     // Track processing URLs to persist state between batches
