@@ -1,66 +1,43 @@
 import { useState, useEffect } from 'react';
-import { FullDocumentationSnippet, getSelectedSession } from '../lib/db';
-import { createProviderWithKey } from '../lib/vector-db';
-import { ContextType } from '../lib/vector-db/provider';
+import { FullDocumentationSnippet } from '../lib/db';
+import { useVectorDB } from './useVectorDB';
 
 /**
  * Hook to manage snippets for a specific URL
  */
-export function useSnippets(apiKey: string) {
+export function useSnippets(sessionId: number) {
   const [snippets, setSnippets] = useState<FullDocumentationSnippet[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
 
-  // Initialize provider with session config
-  const getProvider = async () => {
-    const session = await getSelectedSession();
-    if (!session) {
-      throw new Error("No session selected. Please select a session first.");
-    }
-    
-    const provider = await createProviderWithKey(apiKey, session.context_type || ContextType.LOCAL);
-    await provider.initialize({
-      type: session.context_type || ContextType.LOCAL,
-      pineconeApiKey: session.pinecone_api_key,
-      pineconeEnvironment: session.pinecone_environment,
-      pineconeIndexName: session.pinecone_index
-    });
-    
-    return provider;
-  };
+  // Use the vectorDB hook with sessionId
+  const { 
+    vectorDB,
+    loading: vectorDBLoading,
+    error: vectorDBError,
+    isInitialized,
+    getDocumentsByFilters
+  } = useVectorDB(sessionId);
 
+  // Update error state when vectorDBError changes
   useEffect(() => {
-    async function loadSnippets() {
-      if (!apiKey) {
-        setError('API key is required');
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        const provider = await getProvider();
-        const results = await provider.getDocumentsByFilters({}, 100); // Get first 100 snippets
-        setSnippets(results);
-      } catch (err) {
-        console.error('Error loading snippets:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load snippets');
-      } finally {
-        setLoading(false);
-      }
+    if (vectorDBError) {
+      setError(vectorDBError.message);
     }
-
-    loadSnippets();
-  }, [apiKey]);
+  }, [vectorDBError]);
 
   /**
    * Fetch snippets for a specific URL
    */
   const fetchSnippets = async (url: string) => {
-    if (!apiKey) {
-      setError("API key not set");
+    if (!sessionId) {
+      setError("No session selected");
+      return;
+    }
+
+    if (!isInitialized) {
+      setError("Vector database not initialized");
       return;
     }
 
@@ -72,15 +49,16 @@ export function useSnippets(apiKey: string) {
       // Clear any previous snippets to avoid memory accumulation
       setSnippets([]);
       
-      // Create provider with session config
-      const provider = await getProvider();
-      const results = await provider.getDocumentsByFilters({ url: url }, 50);
+      // Get snippets for the URL (limited to 50 for memory conservation)
+      const urlSnippets = await getDocumentsByFilters(
+        { metadata: { url } },
+        50
+      );
       
-      // Use functional state update to avoid stale closure issues
-      setSnippets(results);
+      setSnippets(urlSnippets);
     } catch (err) {
       console.error('Error fetching snippets:', err);
-      setError('Failed to fetch snippets from VectorDB');
+      setError('Failed to fetch snippets from vector database');
       setSnippets([]);
     } finally {
       setLoading(false);
@@ -97,10 +75,11 @@ export function useSnippets(apiKey: string) {
 
   return {
     snippets,
-    loading,
+    loading: loading || vectorDBLoading,
     error,
     selectedUrl,
     fetchSnippets,
-    clearSnippets
+    clearSnippets,
+    isInitialized
   };
 } 

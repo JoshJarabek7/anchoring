@@ -1,15 +1,29 @@
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { createProviderWithKey } from '@/lib/vector-db';
-import { ContextType } from '@/lib/vector-db/provider';
+import { useVectorDB } from '../../hooks/useVectorDB';
+import { UniversalDocument } from '@/lib/vector-db';
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { 
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 
-import { ProcessingStatus, DocumentSource, processBatch, TechDetails } from "@/lib/pipeline";
+import {
+  ProcessingStatus,
+  DocumentSource,
+  processBatch,
+  TechDetails
+} from "@/lib/pipeline";
 import { MarkdownCleanupValues } from "@/types/forms";
-import { DocumentationCategory, FullDocumentationSnippet, getSession } from "@/lib/db";
+import { 
+  DocumentationCategory,
+  FullDocumentationSnippet,
+  getSession
+} from "@/lib/db";
 import ProcessingOptions from "./ProcessingOptions";
 
 interface ProcessingPipelineProps {
@@ -26,6 +40,24 @@ interface ProcessingPipelineProps {
   onComplete: (results: { url: string; snippets: FullDocumentationSnippet[] }[]) => void;
   onCancel: () => void;
 }
+
+const convertToUniversalDocument = (doc: FullDocumentationSnippet): UniversalDocument => ({
+  id: doc.snippet_id,
+  content: doc.content,
+  metadata: {
+    category: doc.category,
+    language: doc.language,
+    language_version: doc.language_version,
+    framework: doc.framework,
+    framework_version: doc.framework_version,
+    library: doc.library,
+    library_version: doc.library_version,
+    title: doc.title,
+    description: doc.description || "",
+    source_url: doc.source_url || "",
+    concepts: doc.concepts || []
+  }
+});
 
 export default function ProcessingPipeline({
   urls,
@@ -48,26 +80,35 @@ export default function ProcessingPipeline({
   const [progress, setProgress] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
   const processedUrlsRef = useRef(new Set<string>());
-  const [isCancelling, setIsCancelling] = useState(false);
-  const processingCancelRef = useRef(false);
-  const [status, setStatus] = useState('Processing');
-  const [error, setError] = useState<string | null>(null);
-
-  // Cleanup effect is no longer needed since toasts have proper durations
+  const [results, setResults] = useState<{ url: string; snippets: FullDocumentationSnippet[] }[]>([]);
+  
   useEffect(() => {
-    return () => {
-      // No cleanup needed - toasts auto-dismiss
-    };
-  }, []);
-
-  // Log the tech details when component mounts or props change
+    if (!apiKey) {
+      toast.error("OpenAI API key is missing. Please add your API key in Settings.", {
+        id: "api-key-missing-pipeline",
+        duration: 5000,
+      });
+      onCancel();
+    }
+  }, [apiKey, onCancel]);
+  
+  const { 
+    vectorDB, 
+    loading: vectorDBLoading, 
+    error: vectorDBError,
+    addDocuments,
+    isInitialized
+  } = useVectorDB(sessionId);
+  
   useEffect(() => {
-    console.log("ProcessingPipeline - Tech Details:");
-    console.log(`Category: ${category}`);
-    console.log(`Language: ${language}, Version: ${languageVersion}`);
-    console.log(`Framework: ${framework}, Version: ${frameworkVersion}`);
-    console.log(`Library: ${library}, Version: ${libraryVersion}`);
-  }, [category, language, languageVersion, framework, frameworkVersion, library, libraryVersion]);
+    if (vectorDB && apiKey && typeof vectorDB.updateApiKey === 'function') {
+      try {
+        vectorDB.updateApiKey(apiKey);
+      } catch (error) {
+        console.error("Error updating VectorDB API key:", error);
+      }
+    }
+  }, [vectorDB, apiKey]);
 
   const getStatusText = (status: ProcessingStatus) => {
     switch (status) {
@@ -78,7 +119,7 @@ export default function ProcessingPipeline({
       case ProcessingStatus.CHUNKING:
         return "Processing into document snippets";
       case ProcessingStatus.EMBEDDING:
-        return "Embedding and storing in ChromaDB";
+        return "Embedding and storing in Vector Database";
       case ProcessingStatus.COMPLETE:
         return "Processing complete";
       case ProcessingStatus.ERROR:
@@ -89,23 +130,42 @@ export default function ProcessingPipeline({
   };
 
   const handleStartProcessing = async (options: MarkdownCleanupValues & { parallelProcessing: number, unlimitedParallelism: boolean }) => {
-    // Reset processed URLs set and counter when starting new processing
-    processedUrlsRef.current.clear();
-    setProcessedCount(0);
-    console.log("================================");
-    console.log("STARTING PROCESSING PIPELINE");
-    console.log("================================");
-    console.log("Processing options:", options);
-    console.log("URLs to process:", urls.length);
-    console.log(`Parallelism: ${options.unlimitedParallelism ? 'Unlimited' : options.parallelProcessing}`);
-
-    if (!apiKey) {
-      console.error("ERROR: No OpenAI API key provided");
-      toast.error("OpenAI API key is required");
+    if (!apiKey || apiKey.trim() === "") {
+      toast.error("OpenAI API key is missing. Please add your API key in Settings.", {
+        id: "api-key-missing-start-processing",
+        duration: 5000,
+      });
+      onCancel();
       return;
     }
-
-    // Filter URLs that have markdown content
+    
+    if (vectorDBLoading) {
+      toast.error("Vector database is still loading");
+      return;
+    }
+    
+    if (vectorDBError) {
+      toast.error(`Vector database error: ${vectorDBError.message}`);
+      return;
+    }
+    
+    if (!vectorDB) {
+      toast.error("Vector database is not initialized");
+      return;
+    }
+    
+    if (!isInitialized) {
+      toast.error("Vector database is not available");
+      return;
+    }
+    
+    setShowOptions(false);
+    setProcessing(true);
+    setProgress(0);
+    setProcessedCount(0);
+    processedUrlsRef.current = new Set<string>();
+    setResults([]);
+    
     const sourcesToProcess: DocumentSource[] = urls
       .filter(url => url.markdown)
       .map(url => ({
@@ -114,9 +174,6 @@ export default function ProcessingPipeline({
         id: url.id
       }));
 
-    console.log(`Found ${sourcesToProcess.length} URLs with markdown content to process`);
-    console.log("URLs to process:", sourcesToProcess.map(s => s.url));
-
     if (sourcesToProcess.length === 0) {
       console.error("ERROR: No URLs with markdown content to process");
       toast.error("No URLs with markdown content to process");
@@ -124,37 +181,14 @@ export default function ProcessingPipeline({
     }
 
     try {
-      console.log("Hiding options and starting processing");
       setShowOptions(false);
       setProcessing(true);
 
-      // Get the session configuration
       const session = await getSession(sessionId);
       if (!session) {
         throw new Error("Session not found");
       }
 
-      // Create provider with session's context type
-      console.log("Creating vector DB provider");
-      const provider = await createProviderWithKey(apiKey, session.context_type || ContextType.LOCAL);
-      console.log("Initializing vector DB provider...");
-      
-      try {
-        await provider.initialize({
-          type: session.context_type || ContextType.LOCAL,
-          pineconeApiKey: session.pinecone_api_key,
-          pineconeEnvironment: session.pinecone_environment,
-          pineconeIndexName: session.pinecone_index
-        });
-        console.log("✅ Vector DB provider initialized");
-      } catch (error) {
-        console.error("ERROR initializing vector DB provider:", error);
-        toast.error(`Error connecting to vector DB: ${error instanceof Error ? error.message : String(error)}`);
-        setProcessing(false);
-        return;
-      }
-      
-      // Get tech details from props - this ensures we use the saved values
       const techDetails: TechDetails = {
         category,
         language,
@@ -164,63 +198,43 @@ export default function ProcessingPipeline({
         library,
         libraryVersion
       };
-      
-      console.log("Tech details for processing:", techDetails);
 
-      // Determine max concurrency based on user selection
       const maxConcurrency = options.unlimitedParallelism ? 
-        sourcesToProcess.length : // Use all URLs if unlimited
-        options.parallelProcessing; // Otherwise use user-specified value
+        sourcesToProcess.length : 
+        options.parallelProcessing;
       
-      console.log(`Starting batch processing of URLs with max concurrency: ${maxConcurrency}`);
-      
-      // Process batch with the desired concurrency
       processBatch(
         sourcesToProcess,
         techDetails,
         apiKey,
-        provider,
+        { addDocuments, isInitialized },
         {
           cleanupModel: options.model,
           temperature: options.temperature,
           maxTokens: options.maxTokens,
           extractConcepts: true,
-          maxConcurrency // Pass the concurrency setting to the processor
+          maxConcurrency
         },
         (url, status, statusProgress, overallProgress) => {
-          console.log(`Processing status update: URL=${url}, status=${status}, statusProgress=${statusProgress}, overallProgress=${overallProgress}`);
           setCurrentUrl(url);
           setCurrentStatus(status);
           
-          // Update processed count for every status update to keep the count current
-          // This ensures the count updates in real-time and not just at the end
           if ((status === ProcessingStatus.COMPLETE || status === ProcessingStatus.ERROR) && !processedUrlsRef.current.has(url)) {
-            // Only increment if this URL hasn't been processed before
             processedUrlsRef.current.add(url);
             setProcessedCount(prevCount => Math.min(prevCount + 1, urls.length));
-            console.log(`URL ${url} completed. Processed count: ${processedUrlsRef.current.size}/${urls.length}`);
           }
           
-          // Always use the overall progress for the UI if available
           if (overallProgress !== undefined) {
             setProgress(overallProgress);
           } else if (statusProgress !== undefined) {
             setProgress(statusProgress);
           }
         },
-        (results) => {
-          console.log("✅ Processing complete:", results.length, "URLs processed");
-          console.log("Results summary:", results.map(r => `${r.url}: ${r.snippets.length} snippets`));
-          
-          // Reset for next time
+        async (results) => {
           processedUrlsRef.current.clear();
-          
-          // Make sure the final count doesn't exceed the total URLs
           const finalCount = Math.min(results.length, urls.length);
           setProcessedCount(finalCount);
-          
-          setProcessing(false);
-          onComplete(results);
+          await handleProcessingComplete(results);
         }
       );
     } catch (error) {
@@ -231,60 +245,80 @@ export default function ProcessingPipeline({
   };
 
   const handleCancel = () => {
-    setIsCancelling(true);
-    processingCancelRef.current = true;
-    // No need for toast notification
-    
-    // Cancel immediately - no need to wait for operations to check cancel state
     setProcessing(false);
-    setIsCancelling(false);
     onCancel();
   };
 
   const processDocuments = async (documents: FullDocumentationSnippet[]) => {
-    if (!apiKey) {
-      console.error('No API key provided');
+    if (!isInitialized) {
+      console.error("Vector database is not available");
       return;
     }
-
+    
     try {
-      setStatus('Processing');
-      setProgress(0);
-
-      // Get the session configuration
-      const session = await getSession(sessionId);
-      if (!session) {
-        throw new Error("Session not found");
-      }
-
-      // Initialize vector DB provider with session config
-      const provider = await createProviderWithKey(apiKey, session.context_type || ContextType.LOCAL);
-      await provider.initialize({
-        type: session.context_type || ContextType.LOCAL,
-        pineconeApiKey: session.pinecone_api_key,
-        pineconeEnvironment: session.pinecone_environment,
-        pineconeIndexName: session.pinecone_index
-      });
-
-      // Process documents in batches
-      const batchSize = 5;
-      for (let i = 0; i < documents.length; i += batchSize) {
-        const batch = documents.slice(i, i + batchSize);
-        await provider.addDocuments(batch);
-        
-        // Update progress
-        const newProgress = Math.min(((i + batchSize) / documents.length) * 100, 100);
-        setProgress(newProgress);
-      }
-
-      setStatus('Complete');
-      if (onComplete) onComplete([{ url: '', snippets: documents }]);
+      const universalDocs = documents.map(convertToUniversalDocument);
+      await addDocuments(universalDocs);
+      return true;
     } catch (error) {
-      console.error('Error processing documents:', error);
-      setStatus('Error');
-      setError(error instanceof Error ? error.message : 'Unknown error occurred');
+      console.error("Error adding documents to vector database:", error);
+      return false;
     }
   };
+
+  const handleProcessingComplete = async (results: any) => {
+    const newProcessedUrls = results
+      .filter((result: any) => result.success)
+      .map((result: any) => result.url);
+    
+    if (newProcessedUrls.length <= 3) {
+      toast.success(`Processed ${newProcessedUrls.length} URLs successfully`, { 
+        duration: 2000,
+        id: "processing-success"
+      });
+    }
+    
+    setProcessing(false);
+    onComplete(results);
+  };
+
+  if (vectorDBLoading) {
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Processing</CardTitle>
+          <CardDescription>
+            Initializing vector database...
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-2 w-full bg-secondary overflow-hidden rounded-full">
+            <div className="h-full bg-primary animate-pulse" style={{ width: '100%' }}></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (vectorDBError) {
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Error</CardTitle>
+          <CardDescription>
+            Failed to initialize vector database
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="p-4 border border-red-200 bg-red-50 text-red-800 rounded-md">
+            {vectorDBError.message}
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button onClick={onCancel}>Cancel</Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -368,9 +402,8 @@ export default function ProcessingPipeline({
                 <Button
                   variant="outline"
                   onClick={handleCancel}
-                  disabled={isCancelling}
                 >
-                  {isCancelling ? "Cancelling..." : "Cancel Processing"}
+                  Cancel Processing
                 </Button>
               </div>
             </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useVectorDB } from "../../hooks/useVectorDB";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";

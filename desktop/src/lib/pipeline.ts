@@ -3,7 +3,6 @@ import { FullDocumentationSnippet, DocumentationCategory, updateURLCleanedMarkdo
 import { convertToMarkdown } from './crawler';
 import { processMarkdownWithAI } from './openai';
 import { processMarkdownIntoSnippets } from './processor';
-import { ChromaClient } from './chroma-client';
 
 /**
  * Pipeline interfaces
@@ -20,6 +19,12 @@ export interface ProcessingOptions {
   maxTokens: number;
   extractConcepts: boolean;
   maxConcurrency?: number; // Optional parameter for controlling max parallel processing
+}
+
+// Add new interface for vector DB operations
+export interface VectorDBOperations {
+  addDocuments: (documents: any[]) => Promise<void>;
+  isInitialized: boolean;
 }
 
 export interface TechDetails {
@@ -52,7 +57,7 @@ export async function processDocument(
   source: DocumentSource,
   techDetails: TechDetails,
   apiKey: string,
-  chromaClient: ChromaClient,
+  vectorDBOps: VectorDBOperations,
   options: ProcessingOptions,
   onStatusChange: (status: ProcessingStatus, progress?: number) => void,
   urlId?: number
@@ -102,16 +107,18 @@ export async function processDocument(
       );
       console.log(`Created ${snippets.length} snippets`);
       
-      // Step 4: Store all snippets in ChromaDB in a single batch operation
+      // Step 4: Store all snippets in VectorDB in a single batch operation
       onStatusChange(ProcessingStatus.EMBEDDING);
-      console.log("Starting to store snippets in ChromaDB");
+      console.log("Starting to store snippets in VectorDB");
+      console.log(`Attempting to store ${snippets.length} snippets for URL: ${source.url}`);
       
-      // Use the optimized batch method to store all snippets at once
-      await chromaClient.addDocuments(snippets);
-      
-      // Report 100% progress when complete
-      onStatusChange(ProcessingStatus.EMBEDDING, 100);
-      console.log(`Processed ${snippets.length}/${snippets.length} snippets (100%)`);
+      try {
+        await vectorDBOps.addDocuments(snippets);
+        console.log(`Successfully stored ${snippets.length} snippets in vector DB for ${source.url}`);
+      } catch (storageError) {
+        console.error(`Failed to store snippets in vector DB for ${source.url}:`, storageError);
+        throw storageError;
+      }
       
       onStatusChange(ProcessingStatus.COMPLETE);
       console.log("Document processing complete");
@@ -141,12 +148,12 @@ export async function processDocument(
         }
       );
       
-      // Step 4: Store all snippets in ChromaDB in a single batch operation
+      // Step 4: Store all snippets in VectorDB in a single batch operation
       onStatusChange(ProcessingStatus.EMBEDDING);
-      console.log("Starting to store snippets in ChromaDB");
+      console.log("Starting to store snippets in VectorDB");
       
       // Use the optimized batch method to store all snippets at once
-      await chromaClient.addDocuments(snippets);
+      await vectorDBOps.addDocuments(snippets);
       
       // Report 100% progress when complete
       onStatusChange(ProcessingStatus.EMBEDDING, 100);
@@ -170,11 +177,15 @@ export async function processBatch(
   sources: DocumentSource[],
   techDetails: TechDetails,
   apiKey: string,
-  chromaClient: ChromaClient,
+  vectorDBOps: VectorDBOperations,
   options: ProcessingOptions,
   onStatusChange: (url: string, status: ProcessingStatus, progress?: number, overallProgress?: number) => void,
   onComplete: (results: { url: string, snippets: FullDocumentationSnippet[], success: boolean, error?: string }[]) => void
 ): Promise<void> {
+  if (!vectorDBOps.isInitialized) {
+    throw new Error("Vector database is not available");
+  }
+
   // Initialize results array with correct size to maintain order
   const results: ({ url: string, snippets: FullDocumentationSnippet[], success: boolean, error?: string } | undefined)[] = Array(sources.length).fill(undefined);
   
@@ -213,9 +224,6 @@ export async function processBatch(
         // Notify status change at the beginning with overall progress
         const initialOverallProgress = updateOverallProgress();
         onStatusChange(source.url, ProcessingStatus.CONVERTING, 0, initialOverallProgress);
-        console.log(`Processing ${sourceIndex + 1}/${sources.length}: ${source.url}`);
-        
-        // No need for toast notification - UI will show progress
         
         try {
           // Each document has its own progress through several phases
@@ -231,15 +239,13 @@ export async function processBatch(
           };
           
           let currentPhase = ProcessingStatus.IDLE;
-                  
+          
           // Calculate weighted progress across all phases
           const calculateDocumentProgress = (status: ProcessingStatus, phaseProgress = 1.0) => {
-            // Default phase progress to 100% if not specified
-            
             // Calculate progress up to previous phases
             let progress = 0;
             for (const phase of [ProcessingStatus.CONVERTING, ProcessingStatus.CLEANING, 
-                                ProcessingStatus.CHUNKING, ProcessingStatus.EMBEDDING]) {
+                               ProcessingStatus.CHUNKING, ProcessingStatus.EMBEDDING]) {
               // Add completed prior phases
               if (phase === status) {
                 // For current phase, multiply by phase progress
@@ -254,37 +260,30 @@ export async function processBatch(
             return Math.min(progress, 1.0); // Cap at 100%
           };
           
+          // Create a wrapper for the status change callback to match signatures
+          const statusChangeWrapper = (status: ProcessingStatus, phaseProgress?: number) => {
+            // Track current phase
+            currentPhase = status;
+            
+            // Calculate document-level progress
+            const documentProgress = calculateDocumentProgress(status, phaseProgress);
+            
+            // Update overall progress
+            const overallProgress = updateOverallProgress();
+            
+            // Update the status for UI
+            onStatusChange(source.url, status, documentProgress, overallProgress);
+          };
+          
           const snippets = await processDocument(
             source,
             techDetails,
             apiKey,
-            chromaClient,
+            vectorDBOps,
             options,
-            (status, phaseProgress) => {
-              // Track current phase and progress
-              currentPhase = status;
-              // Track phase progress in the callback
-              
-              // Calculate document-level progress
-              const documentProgress = calculateDocumentProgress(status, phaseProgress);
-              
-              // Update overall progress (document progress + completed documents)
-              const overallProgress = updateOverallProgress();
-              
-              // Update the status for UI
-              onStatusChange(source.url, status, documentProgress, overallProgress);
-              
-              // Only log phase changes, no toast needed
-              if (status !== currentPhase) {
-                console.log(`${source.url}: ${status} phase starting`);
-              }
-            },
-            source.id // Pass the URL ID to processDocument for updating cleaned_markdown
+            statusChangeWrapper,
+            source.id
           );
-          
-          // Mark as completed for overall progress tracking
-          completedCount++;
-          const overallProgress = updateOverallProgress();
           
           // Mark this URL as processed
           processedUrls.add(source.url);
@@ -301,48 +300,41 @@ export async function processBatch(
             console.log(`No ID available for URL ${source.url}, skipping database status update`);
           }
           
-          // Skip success toast notifications
-          
-          // Update UI with final progress
-          onStatusChange(source.url, ProcessingStatus.COMPLETE, 1, overallProgress);
-          
-          return { url: source.url, snippets, success: true, index: sourceIndex };
+          return { url: source.url, snippets, success: true, error: undefined, index: sourceIndex };
         } catch (error) {
-          // Log errors but don't show toast
-          console.error(`Error processing ${source.url}:`, error);
-          
-          // Mark as completed for overall progress tracking, even though it failed
-          completedCount++;
-          const overallProgress = updateOverallProgress();
-          onStatusChange(source.url, ProcessingStatus.ERROR, 0, overallProgress);
-          
-          // Return error result
-          return { url: source.url, snippets: [], success: false, error: String(error), index: sourceIndex };
+          console.error(`Error processing document ${source.url}:`, error);
+          return { url: source.url, snippets: [], success: false, error: error instanceof Error ? error.message : String(error), index: sourceIndex };
         }
       });
       
-      // Wait for all promises in this batch
       const batchResults = await Promise.all(batchPromises);
-      
-      // Store results in correct order
-      batchResults.forEach(result => {
-        const { index, ...rest } = result;
-        results[index] = rest;
+      batchResults.forEach((result) => {
+        if (result.success) {
+          results[result.index] = {
+            url: result.url,
+            snippets: result.snippets,
+            success: result.success,
+            error: result.error
+          };
+        } else {
+          console.error(`Error processing document ${result.url}:`, result.error);
+        }
       });
+      
+      // Update overall progress
+      completedCount += batch.length;
+      updateOverallProgress();
     }
-    
-    // When all batches are done, call complete
-    onComplete(results.filter(r => r !== undefined));
   };
   
-  // Start processing with controlled parallelism
-  processBatchInParallel().catch(error => {
-    console.error("Critical error in batch processing:", error);
-    onComplete([]);
-  });
-
-  // Log summary of what we're about to process
-  console.log("================================");
-  console.log(`PROCESSING BATCH: ${sources.length} URLs`);
-  console.log("================================");
+  await processBatchInParallel();
+  
+  // Filter out undefined results
+  const filteredResults = results
+    .filter((result): result is { url: string, snippets: FullDocumentationSnippet[], success: boolean, error?: string } => 
+      result !== undefined
+    );
+  
+  // Call onComplete with filtered results
+  onComplete(filteredResults);
 }

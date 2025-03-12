@@ -390,7 +390,7 @@ async fn vector_search(query: String, session_id: Option<u64>, limit: Option<u32
     
     let start = Instant::now();
     let search_limit = limit.unwrap_or(10);
-    let session_filter = session_id.map(|id| format!("session_id = {}", id));
+    let _session_filter = session_id.map(|id| format!("session_id = {}", id));
     
     // For now, return a mock response
     // In a real implementation, this would:
@@ -569,23 +569,186 @@ type Dog = Animal & {
     results
 }
 
+mod pinecone;
+use pinecone::{PineconeConfig, Document, PineconeService};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use tauri_plugin_cors_fetch;
+
+// Global state for Pinecone sessions
+lazy_static::lazy_static! {
+    static ref PINECONE_SESSIONS: Arc<Mutex<HashMap<u64, Arc<PineconeService>>>> = Arc::new(Mutex::new(HashMap::new()));
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PineconeSearchResult {
+    id: String,
+    values: Vec<f32>,
+    metadata: Option<serde_json::Value>,
+}
+
+#[tauri::command]
+async fn initialize_vector_db(session_id: u64, config: PineconeConfig) -> Result<(), String> {
+    println!("🚨 [Tauri Command] initialize_vector_db ENTRY POINT - session_id: {}", session_id);
+    println!("🚨 [Tauri Command] Using index name: {}", config.index_name);
+    println!("🚨 [Tauri Command] API key (first 5 chars): {}", &config.api_key[..5.min(config.api_key.len())]);
+    
+    let service = match PineconeService::new(config).await {
+        Ok(service) => {
+            println!("✅ [Tauri Command] Successfully created PineconeService");
+            service
+        },
+        Err(e) => {
+            println!("❌ [Tauri Command] Failed to initialize Pinecone: {}", e);
+            return Err(format!("Failed to initialize Pinecone: {}", e));
+        }
+    };
+
+    let mut sessions = PINECONE_SESSIONS.lock().await;
+    sessions.insert(session_id, Arc::new(service));
+    
+    println!("✅ [Tauri Command] Successfully initialized vector DB for session: {}", session_id);
+    Ok(())
+}
+
+#[tauri::command]
+async fn add_documents(session_id: u64, documents: Vec<Document>) -> Result<(), String> {
+    println!("🚨 [Tauri Command] add_documents ENTRY POINT - session_id: {}, document count: {}", 
+             session_id, documents.len());
+    
+    // Log first document details immediately
+    if !documents.is_empty() {
+        let first_doc = &documents[0];
+        println!("🚨 [Tauri Command] First document - ID: {}, content length: {}, embedding length: {}", 
+                 first_doc.id, first_doc.content.len(), first_doc.embedding.len());
+    }
+    
+    let sessions = PINECONE_SESSIONS.lock().await;
+    let service = match sessions.get(&session_id) {
+        Some(service) => {
+            println!("✅ [Tauri Command] Found Pinecone service for session: {}", session_id);
+            service
+        },
+        None => {
+            println!("❌ [Tauri Command] Vector DB not initialized for session: {}", session_id);
+            return Err("Vector DB not initialized for this session".to_string());
+        }
+    };
+
+    println!("🔍 [Tauri Command] Forwarding {} documents to PineconeService", documents.len());
+    match service.add_documents(documents).await {
+        Ok(_) => {
+            println!("✅ [Tauri Command] Successfully added documents for session: {}", session_id);
+            Ok(())
+        },
+        Err(e) => {
+            println!("❌ [Tauri Command] Failed to add documents: {}", e);
+            Err(format!("Failed to add documents: {}", e))
+        }
+    }
+}
+
+#[tauri::command]
+async fn search_documents(
+    session_id: u64,
+    embedding: Vec<f32>,
+    filter: Option<serde_json::Value>,
+    limit: Option<usize>,
+) -> Result<Vec<PineconeSearchResult>, String> {
+    println!("🔍 [Tauri Command] search_documents called with embedding length: {}", embedding.len());
+    
+    let sessions = PINECONE_SESSIONS.lock().await;
+    let service = match sessions.get(&session_id) {
+        Some(service) => service,
+        None => {
+            println!("❌ [Tauri Command] Vector DB not initialized for session: {}", session_id);
+            return Err("Vector DB not initialized for this session".to_string());
+        }
+    };
+
+    // Search for vectors
+    let vectors = match service.search(embedding, filter, limit.unwrap_or(10)).await {
+        Ok(vectors) => vectors,
+        Err(e) => {
+            println!("❌ [Tauri Command] Failed to search documents: {}", e);
+            return Err(format!("Failed to search documents: {}", e));
+        }
+    };
+    
+    // Convert vectors to results
+    let mut results = Vec::new();
+    
+    for v in vectors {
+        // Convert Pinecone metadata to serde_json::Value if present
+        let metadata = v.metadata.map(|md| {
+            let mut map = serde_json::Map::new();
+            for (key, value) in md.fields {
+                if let Some(kind) = value.kind {
+                    let json_value = match kind {
+                        pinecone_sdk::models::Kind::StringValue(s) => {
+                            // Try to parse string values that might be JSON
+                            if let Ok(parsed) = serde_json::from_str(&s) {
+                                parsed
+                            } else {
+                                serde_json::Value::String(s)
+                            }
+                        },
+                        pinecone_sdk::models::Kind::NumberValue(n) => {
+                            if let Some(num) = serde_json::Number::from_f64(n) {
+                                serde_json::Value::Number(num)
+                            } else {
+                                serde_json::Value::Null
+                            }
+                        },
+                        pinecone_sdk::models::Kind::BoolValue(b) => serde_json::Value::Bool(b),
+                        _ => serde_json::Value::Null,
+                    };
+                    // Clone values for logging since they will be moved into the map
+                    let key_clone = key.clone();
+                    let json_value_clone = json_value.clone();
+                    map.insert(key, json_value);
+                    println!("🔍 [Pinecone] Retrieved metadata field: {} = {:?}", key_clone, json_value_clone);
+                }
+            }
+            serde_json::Value::Object(map)
+        });
+        
+        println!("🔍 [Pinecone] Processing match: {:?}", v.id);
+        if let Some(ref md) = metadata {
+            println!("🔍 [Pinecone] Match metadata: {:?}", md);
+        }
+        
+        results.push(PineconeSearchResult {
+            id: v.id,
+            values: v.values,
+            metadata,
+        });
+    }
+    
+    println!("✅ [Tauri Command] Search returned {} results", results.len());
+    Ok(results)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_cors_fetch::init())
-        .plugin(tauri_plugin_sql::Builder::new()
-            .add_migrations("sqlite:anchoring.db", vec![])
-            .build())
-        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             fetch_proxies,
             fetch_with_headless_browser,
             convert_html_to_markdown,
             split_text_by_tokens,
             count_tokens,
-            vector_search
+            vector_search,
+            // Add new Pinecone commands
+            initialize_vector_db,
+            add_documents,
+            search_documents,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

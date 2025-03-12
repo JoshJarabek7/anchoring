@@ -39,6 +39,7 @@ const createTables = async () => {
       )
     `);
     
+    // Use the post-migration schema for new installations - without chroma_path
     await dbConn.execute(`
       CREATE TABLE IF NOT EXISTS crawl_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +75,7 @@ const createTables = async () => {
       )
     `);
     
-    // First create the user_settings table if it doesn't exist with the original schema
+    // Use the post-migration schema for new installations - without chroma_path
     await dbConn.execute(`
       CREATE TABLE IF NOT EXISTS user_settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,44 +89,23 @@ const createTables = async () => {
       )
     `);
     
-    // Add AI processing columns if they don't exist
-    try {
-      await dbConn.execute(`
-        ALTER TABLE user_settings ADD COLUMN language TEXT;
-        ALTER TABLE user_settings ADD COLUMN language_version TEXT;
-        ALTER TABLE user_settings ADD COLUMN framework TEXT;
-        ALTER TABLE user_settings ADD COLUMN framework_version TEXT;
-        ALTER TABLE user_settings ADD COLUMN library TEXT;
-        ALTER TABLE user_settings ADD COLUMN library_version TEXT;
-      `);
-      console.log("Added AI processing columns to user_settings table");
-    } catch (error) {
-      // Columns might already exist, which is fine
-      console.log("Some AI processing columns might already exist in user_settings table");
-    }
+    // Add processing_settings table if it doesn't exist
+    await dbConn.execute(`
+      CREATE TABLE IF NOT EXISTS processing_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        category TEXT CHECK(category IN ('language', 'framework', 'library')),
+        language TEXT,
+        language_version TEXT,
+        framework TEXT,
+        framework_version TEXT,
+        library TEXT,
+        library_version TEXT,
+        FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE
+      )
+    `);
     
-    // Add parallelism columns to crawl_settings if they don't exist
-    try {
-      await dbConn.execute(`
-        ALTER TABLE crawl_settings ADD COLUMN max_concurrent_requests INTEGER DEFAULT 4;
-      `);
-      console.log("Added max_concurrent_requests column to crawl_settings table");
-    } catch (error) {
-      // Column might already exist, which is fine
-      console.log("Column max_concurrent_requests might already exist in crawl_settings table");
-    }
-    
-    try {
-      await dbConn.execute(`
-        ALTER TABLE crawl_settings ADD COLUMN unlimited_parallelism INTEGER DEFAULT 0;
-      `);
-      console.log("Added unlimited_parallelism column to crawl_settings table");
-    } catch (error) {
-      // Column might already exist, which is fine
-      console.log("Column unlimited_parallelism might already exist in crawl_settings table");
-    }
-    
-    // Simplified documentation snippets schema - primary data stored in ChromaDB
+    // Add documentation_snippets table if it doesn't exist
     await dbConn.execute(`
       CREATE TABLE IF NOT EXISTS documentation_snippets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,23 +116,45 @@ const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
+    
+    // Add vector DB tables
     await dbConn.execute(`
-      CREATE TABLE IF NOT EXISTS vector_db_config (
+      CREATE TABLE IF NOT EXISTS vector_db_providers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id INTEGER NOT NULL UNIQUE,
-        provider_type TEXT NOT NULL,
-        config TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        schema TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await dbConn.execute(`
+      CREATE TABLE IF NOT EXISTS vector_db_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pinecone_api_key TEXT,
+        pinecone_environment TEXT,
+        pinecone_index TEXT
+      )
+    `);
+    
+    // Updated to remove reference to vector_db_configurations
+    await dbConn.execute(`
+      CREATE TABLE IF NOT EXISTS session_vector_db_mappings (
+        session_id INTEGER NOT NULL,
+        provider_name TEXT NOT NULL,
+        config_data TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (session_id, provider_name),
         FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE
       )
     `);
-
+    
     console.log("All database tables created successfully");
   } catch (error) {
-    console.error("Error creating database tables:", error);
+    console.error("Error creating tables:", error);
     throw error;
   }
-}
+};
 
 // Proxy Types
 export interface Proxy {
@@ -258,13 +260,6 @@ export interface VectorDBSettings {
   pinecone_index?: string;
 }
 
-// Vector DB Config Types
-export interface VectorDBConfig {
-  session_id: number;
-  provider_type: string;
-  config: string; // JSON stringified config specific to the provider type
-}
-
 // Proxy Operations
 export const fetchAndSaveProxies = async (proxyUrls: string[]) => {
   const dbConn = await initDB();
@@ -360,7 +355,7 @@ export const createSession = async (sessionData: CrawlSession) => {
     console.log("Session created in database, result:", result);
     return {
       ...sessionData,
-      id: result.lastInsertId
+      id: result.lastInsertId!
     };
   } catch (error) {
     console.error("Error in createSession:", error);
@@ -465,7 +460,7 @@ export const addURL = async (urlData: CrawlURL) => {
   
   return {
     ...urlData,
-    id: result.lastInsertId
+    id: result.lastInsertId!
   };
 };
 
@@ -499,61 +494,34 @@ export const updateURLStatus = async (id: number, status: string) => {
   const dbConn = await initDB();
   
   try {
-    const result = await dbConn.execute(
-      "UPDATE urls SET status = $1 WHERE id = $2",
+    await dbConn.execute(
+      'UPDATE urls SET status = ? WHERE id = ?',
       [status, id]
     );
-    return result;
-  } catch (error) {
-    // If we get a constraint error, it might be because the schema hasn't been updated
-    if (String(error).includes("CHECK constraint failed")) {
-      console.warn("CHECK constraint error, attempting database migration");
-      
-      try {
-        // Try to execute the schema migration directly
-        await dbConn.execute(`
-          BEGIN TRANSACTION;
-          
-          -- Create a new table with the updated constraint
-          CREATE TABLE urls_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            url TEXT NOT NULL,
-            status TEXT CHECK(status IN ('pending', 'crawled', 'error', 'skipped', 'processed')),
-            html TEXT,
-            markdown TEXT,
-            cleaned_markdown TEXT,
-            FOREIGN KEY(session_id) REFERENCES crawl_sessions(id) ON DELETE CASCADE
-          );
-          
-          -- Copy data
-          INSERT INTO urls_new 
-          SELECT id, session_id, url, status, html, markdown, cleaned_markdown 
-          FROM urls;
-          
-          -- Drop old table and rename new one
-          DROP TABLE urls;
-          ALTER TABLE urls_new RENAME TO urls;
-          
-          COMMIT;
-        `);
-        
-        console.log("Updated urls table schema to include 'processed' status");
-        
-        // Try the update again
-        const result = await dbConn.execute(
-          "UPDATE urls SET status = $1 WHERE id = $2",
-          [status, id]
-        );
-        return result;
-      } catch (schemaError) {
-        console.error("Failed to update schema:", schemaError);
-        throw schemaError;
-      }
-    }
     
-    // If it's another type of error or schema update failed, throw it
+    return true;
+  } catch (error) {
     console.error("Error updating URL status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update URL status by URL string instead of ID
+ * This function is used by the vector-db library
+ */
+export const updateURLStatusByUrl = async (url: string, status: string) => {
+  const dbConn = await initDB();
+  
+  try {
+    await dbConn.execute(
+      'UPDATE urls SET status = ? WHERE url = ?',
+      [status, url]
+    );
+    
+    return true;
+  } catch (error) {
+    console.error("Error updating URL status by URL:", error);
     throw error;
   }
 };
@@ -604,7 +572,7 @@ export const saveCrawlSettings = async (settingsData: CrawlSettings) => {
       
       const savedSettings = {
         ...settingsData,
-        id: result.lastInsertId
+        id: result.lastInsertId!
       };
       console.log("Created new crawler settings:", savedSettings);
       return savedSettings;
@@ -696,10 +664,10 @@ export const saveUserSettings = async (settings: UserSettings) => {
       ]
     );
     
-    console.log("Settings created with ID:", result.lastInsertId);
+    console.log("Settings created with ID:", result.lastInsertId!);
     return {
       ...settings,
-      id: result.lastInsertId
+      id: result.lastInsertId!
     };
   } else {
     // Update existing settings with non-null values
@@ -833,7 +801,6 @@ export const getProcessingSettings = async (sessionId: number): Promise<Processi
       return null;
     }
     
-    console.log(`Found processing settings for session ${sessionId}:`, result[0]);
     return result[0];
   } catch (error) {
     console.error(`Error fetching processing settings:`, error);
@@ -887,7 +854,6 @@ export const saveProcessingSettings = async (settings: ProcessingSettings): Prom
       );
     }
     
-    console.log(`Successfully saved processing settings for session ${settings.session_id}`);
   } catch (error) {
     console.error(`Error saving processing settings:`, error);
     throw error;
@@ -900,8 +866,6 @@ export const getUserSettings = async () => {
   const result = await dbConn.select<UserSettings[]>(
     'SELECT id, openai_key, language, language_version, framework, framework_version, library, library_version FROM user_settings LIMIT 1'
   );
-  
-  console.log("Raw user settings from database:", JSON.stringify(result, null, 2));
   
   if (result.length === 0) {
     const defaultSettings = {
@@ -945,7 +909,7 @@ export const addDocumentationSnippet = async (snippet: DocumentationSnippet): Pr
     
     return {
       ...snippet,
-      id: result.lastInsertId,
+      id: result.lastInsertId!,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -1246,11 +1210,9 @@ export const importSession = async (importData: any): Promise<CrawlSession> => {
 // Vector DB Settings Operations
 export const saveVectorDBSettings = async (settings: VectorDBSettings) => {
   const dbConn = await initDB();
-  console.log("Saving vector DB settings:", settings);
   
   // Check if any settings exist
   const existing = await dbConn.select<VectorDBSettings[]>('SELECT * FROM vector_db_settings LIMIT 1');
-  console.log("Existing vector DB settings:", existing.length ? existing[0] : "None");
   
   if (existing.length === 0) {
     // Create new settings
@@ -1264,10 +1226,10 @@ export const saveVectorDBSettings = async (settings: VectorDBSettings) => {
       ]
     );
     
-    console.log("Vector DB settings created with ID:", result.lastInsertId);
+    console.log("Vector DB settings created with ID:", result.lastInsertId!);
     return {
       ...settings,
-      id: result.lastInsertId
+      id: result.lastInsertId!
     };
   }
 
@@ -1290,9 +1252,6 @@ export const saveVectorDBSettings = async (settings: VectorDBSettings) => {
     params.push(settings.pinecone_index);
   }
   
-  console.log("Updating vector DB settings with fields:", updates);
-  console.log("Update parameters:", params);
-  
   if (updates.length > 0) {
     params.push(existing[0].id);
     const query = `UPDATE vector_db_settings SET ${updates.join(', ')} WHERE id = ?`;
@@ -1303,10 +1262,6 @@ export const saveVectorDBSettings = async (settings: VectorDBSettings) => {
   } else {
     console.log("No fields to update");
   }
-  
-  // Get the updated settings to confirm the changes
-  const updatedSettings = await getVectorDBSettings();
-  console.log("Updated vector DB settings:", updatedSettings);
   
   return {
     ...existing[0],
@@ -1320,8 +1275,6 @@ export const getVectorDBSettings = async () => {
   const result = await dbConn.select<VectorDBSettings[]>(
     'SELECT id, pinecone_api_key, pinecone_environment, pinecone_index FROM vector_db_settings LIMIT 1'
   );
-  
-  console.log("Raw vector DB settings from database:", JSON.stringify(result, null, 2));
   
   if (result.length === 0) {
     const defaultSettings = {
@@ -1340,7 +1293,6 @@ export const getVectorDBSettings = async () => {
     pinecone_index: result[0].pinecone_index || ''
   };
   
-  console.log("Retrieved vector DB settings from database:", settings);
   return settings;
 };
 
@@ -1353,47 +1305,12 @@ export interface VectorDBProvider {
   created_at: string;
 }
 
-export interface VectorDBConfiguration {
-  id: number;
-  name: string;
-  provider_id: number;
-  config: Record<string, any>;
-  is_default: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface SessionVectorDBMapping {
   session_id: number;
-  config_id: number;
-  created_at: string;
+  provider_name: string;
+  config_data: string;
+  created_at?: string;
 }
-
-export const registerVectorDBProvider = async (
-  name: string,
-  version: string,
-  schema: Record<string, any>
-): Promise<VectorDBProvider> => {
-  const dbConn = await initDB();
-  
-  try {
-    const result = await dbConn.execute(
-      'INSERT INTO vector_db_providers (name, version, schema) VALUES (?, ?, ?)',
-      [name, version, JSON.stringify(schema)]
-    );
-    
-    return {
-      id: result.lastInsertId,
-      name,
-      version,
-      schema,
-      created_at: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('Error registering vector DB provider:', error);
-    throw error;
-  }
-};
 
 export const getVectorDBProviders = async (): Promise<VectorDBProvider[]> => {
   const dbConn = await initDB();
@@ -1413,102 +1330,64 @@ export const getVectorDBProviders = async (): Promise<VectorDBProvider[]> => {
   }
 };
 
-export const createVectorDBConfiguration = async (
-  name: string,
-  providerId: number,
-  config: Record<string, any>,
-  isDefault: boolean = false
-): Promise<VectorDBConfiguration> => {
-  const dbConn = await initDB();
-  
+/**
+ * Save the vector DB provider mapping for a session
+ * @param mapping The session-vector DB mapping to save
+ * @returns The saved mapping
+ */
+export const saveSessionVectorDBMapping = async (mapping: SessionVectorDBMapping): Promise<SessionVectorDBMapping> => {
   try {
-    // If this is set as default, unset any existing defaults for this provider
-    if (isDefault) {
+    const dbConn = await initDB();
+    
+    // Check if mapping already exists
+    const existingMapping = await dbConn.select<SessionVectorDBMapping[]>(
+      'SELECT * FROM session_vector_db_mappings WHERE session_id = ? AND provider_name = ?',
+      [mapping.session_id, mapping.provider_name]
+    );
+    
+    if (existingMapping.length > 0) {
+      // Update existing mapping;
       await dbConn.execute(
-        'UPDATE vector_db_configurations SET is_default = 0 WHERE provider_id = ?',
-        [providerId]
+        'UPDATE session_vector_db_mappings SET config_data = ? WHERE session_id = ? AND provider_name = ?',
+        [mapping.config_data, mapping.session_id, mapping.provider_name]
+      );
+    } else {
+      // Create new mapping
+      await dbConn.execute(
+        'INSERT INTO session_vector_db_mappings (session_id, provider_name, config_data) VALUES (?, ?, ?)',
+        [mapping.session_id, mapping.provider_name, mapping.config_data]
       );
     }
     
-    const result = await dbConn.execute(
-      'INSERT INTO vector_db_configurations (name, provider_id, config, is_default) VALUES (?, ?, ?, ?)',
-      [name, providerId, JSON.stringify(config), isDefault ? 1 : 0]
-    );
+    return mapping;
+  } catch (error) {
+    console.error("Error saving session vector DB mapping:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get the vector DB provider mapping for a session
+ * @param sessionId The session ID
+ * @returns The session-vector DB mapping or null if not found
+ */
+export const getSessionVectorDBMapping = async (sessionId: number): Promise<SessionVectorDBMapping | null> => {
+  try {
+    const dbConn = await initDB();
     
-    return {
-      id: result.lastInsertId,
-      name,
-      provider_id: providerId,
-      config,
-      is_default: isDefault,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('Error creating vector DB configuration:', error);
-    throw error;
-  }
-};
-
-export const getVectorDBConfigurations = async (): Promise<VectorDBConfiguration[]> => {
-  const dbConn = await initDB();
-  
-  try {
-    const result = await dbConn.select<VectorDBConfiguration[]>(
-      'SELECT * FROM vector_db_configurations'
-    );
-    
-    return result.map(config => ({
-      ...config,
-      config: JSON.parse(config.config as unknown as string)
-    }));
-  } catch (error) {
-    console.error('Error getting vector DB configurations:', error);
-    throw error;
-  }
-};
-
-export const setSessionVectorDBConfig = async (
-  sessionId: number,
-  configId: number
-): Promise<void> => {
-  const dbConn = await initDB();
-  
-  try {
-    await dbConn.execute(
-      'INSERT OR REPLACE INTO session_vector_db_mappings (session_id, config_id) VALUES (?, ?)',
-      [sessionId, configId]
-    );
-  } catch (error) {
-    console.error('Error setting session vector DB config:', error);
-    throw error;
-  }
-};
-
-export const getSessionVectorDBConfig = async (
-  sessionId: number
-): Promise<VectorDBConfiguration | null> => {
-  const dbConn = await initDB();
-  
-  try {
-    const result = await dbConn.select<VectorDBConfiguration[]>(
-      `SELECT c.* 
-       FROM vector_db_configurations c
-       JOIN session_vector_db_mappings m ON c.id = m.config_id
-       WHERE m.session_id = ?`,
+    const mappings = await dbConn.select<SessionVectorDBMapping[]>(
+      'SELECT * FROM session_vector_db_mappings WHERE session_id = ?',
       [sessionId]
     );
     
-    if (result.length === 0) {
+    if (mappings.length === 0) {
+      console.log("No vector DB mapping found for session:", sessionId);
       return null;
     }
     
-    return {
-      ...result[0],
-      config: JSON.parse(result[0].config as unknown as string)
-    };
+    return mappings[0];
   } catch (error) {
-    console.error('Error getting session vector DB config:', error);
+    console.error("Error getting session vector DB mapping:", error);
     throw error;
   }
 };

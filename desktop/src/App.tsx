@@ -10,8 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { getUserSettings, getSessions } from "./lib/db";
 import { BookmarkIcon, StopCircle } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-
-// Import pages
+import { useVectorDB } from "./hooks/useVectorDB";
 import SessionsPage from "./components/sessions/SessionsPage";
 import SettingsPage from "./components/settings/SettingsPage";
 import { CrawlSession, CrawlSettings } from "./lib/db";
@@ -284,8 +283,11 @@ const MainApp = () => {
           const settings = await getUserSettings();
           console.log("Retrieved settings:", settings);
           if (settings?.openai_key) {
-            console.log(`Found API key in database settings (length: ${settings.openai_key.length})`);
+            const keyLength = settings.openai_key.length;
+            console.log(`Found API key in database settings (length: ${keyLength}, starts with: ${settings.openai_key.substring(0, 5)}..., ends with: ...${settings.openai_key.substring(keyLength - 4)})`);
             key = settings.openai_key;
+          } else {
+            console.log("No API key found in database settings");
           }
         } catch (dbError) {
           console.error("Error accessing database for API key:", dbError);
@@ -296,8 +298,11 @@ const MainApp = () => {
           console.log("Checking environment for API key...");
           const envKey = import.meta.env.VITE_OPENAI_API_KEY;
           if (envKey) {
-            console.log(`Found API key in environment (length: ${envKey.length})`);
+            const keyLength = envKey.length;
+            console.log(`Found API key in environment (length: ${keyLength}, starts with: ${envKey.substring(0, 5)}..., ends with: ...${envKey.substring(keyLength - 4)})`);
             key = envKey;
+          } else {
+            console.log("No API key found in environment");
           }
         }
         
@@ -308,6 +313,12 @@ const MainApp = () => {
         } else {
           console.log("No API key found in any source");
           setApiKey("");
+          
+          // Show a toast notification if no API key is found
+          toast.error("OpenAI API key is missing. Please add your API key in Settings.", {
+            id: "missing-api-key-app",
+            duration: 5000,
+          });
         }
       } catch (error) {
         console.error("Error loading API key:", error);
@@ -392,7 +403,7 @@ const MainApp = () => {
   
   // Function to change active tab
   const handleTabChange = (value: string) => {
-    // Remember previous tab
+    // Store previous tab for reference
     const prevTab = activeTab;
     
     // Update active tab
@@ -406,12 +417,32 @@ const MainApp = () => {
         setUrlsLoaded(true);
       }
     }
+    
+    // Log when switching to knowledge tab to help debug vector DB initialization
+    if (value === "knowledge" && activeSession) {
+      console.log(`App: Switched to knowledge tab with session ${activeSession.id}, ensuring vector DB is initialized`);
+    }
   };
+  
+  // Initialize vector DB when a session is selected
+  const { isInitialized: vectorDBInitialized, loading: vectorDBLoading, error: vectorDBError } = 
+    useVectorDB(activeSession?.id ?? -1);
+  
+  // Log vector DB initialization status when it changes
+  useEffect(() => {
+    if (activeSession?.id) {
+      console.log(`App: Vector DB status for session ${activeSession.id}: initialized=${vectorDBInitialized}, loading=${vectorDBLoading}, error=${vectorDBError ? 'yes' : 'no'}`);
+    }
+  }, [activeSession?.id, vectorDBInitialized, vectorDBLoading, vectorDBError]);
   
   const handleSelectSession = (session: CrawlSession) => {
     // When selecting a new session, we need to reset our loaded states
     if (activeSession?.id !== session.id) {
       setUrlsLoaded(false);
+      
+      // Log session selection for debugging
+      console.log(`App: Selected session ${session.id}`);
+      
     }
     
     setActiveSession(session);
@@ -489,7 +520,7 @@ const MainApp = () => {
             </TabsContent>
             
             <TabsContent value="knowledge">
-              <KnowledgeBase apiKey={apiKey} />
+              <KnowledgeBase sessionId={activeSession?.id ?? -1} />
             </TabsContent>
             
             <TabsContent value="settings">

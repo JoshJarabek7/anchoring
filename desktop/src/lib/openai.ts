@@ -377,6 +377,20 @@ export const generateEmbedding = async (
   dimensions: number = 3072 // Default to 3072 dimensions to match MCP server
 ): Promise<number[]> => {
   try {
+    // Check if API key is provided
+    if (!apiKey || apiKey.trim() === "") {
+      const error = new Error("OpenAI API key is missing. Please add your API key in Settings.");
+      console.error("Error generating embedding: Missing API key");
+      toast.error("OpenAI API key is missing. Please add your API key in Settings.", {
+        id: "missing-api-key-embedding",
+        duration: 5000,
+      });
+      throw error;
+    }
+    
+    // Log the first and last few characters of the API key for debugging
+    console.log(`Using API key for embedding: ${apiKey.substring(0, 5)}...${apiKey.substring(apiKey.length - 4)}`);
+    
     const openai = initializeOpenAI(apiKey);
     
     const response = await openai.embeddings.create({
@@ -389,6 +403,15 @@ export const generateEmbedding = async (
     return response.data[0].embedding;
   } catch (error) {
     console.error("Error generating embedding:", error);
+    
+    // Check if it's an authentication error
+    if (error instanceof Error && error.message.includes("401")) {
+      toast.error("Invalid OpenAI API key. Please check your API key in Settings.", {
+        id: "invalid-api-key-embedding",
+        duration: 5000,
+      });
+    }
+    
     throw error;
   }
 };

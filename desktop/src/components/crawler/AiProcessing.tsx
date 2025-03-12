@@ -21,6 +21,7 @@ import { Badge } from "../ui/badge";
 import { useProcessedUrls } from "../../hooks/useProcessedUrls";
 import { useSnippets } from "../../hooks/useSnippets";
 import SnippetViewer from "./SnippetViewer";
+import { useVectorDB } from "../../hooks/useVectorDB";
 
 interface AiProcessingProps {
   sessionId: number;
@@ -82,6 +83,18 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
   const [prompt, setPrompt] = useState<string>("Extract documentation snippets...");
   const [processingStopped, setProcessingStopped] = useState<boolean>(false);
   
+  // Check API key on component mount
+  useEffect(() => {
+    console.log("AiProcessing component mounted with API key:", apiKey ? `${apiKey.substring(0, 5)}...${apiKey.substring(apiKey.length - 4)}` : "No API key provided");
+    
+    if (!apiKey) {
+      toast.error("OpenAI API key is missing. Please add your API key in Settings.", {
+        id: "api-key-missing-init",
+        duration: 5000,
+      });
+    }
+  }, [apiKey]);
+  
   // Pagination state
   const [allUrls, setAllUrls] = useState<CrawlURL[]>([]);
   const [page, setPage] = useState<number>(1);
@@ -94,7 +107,7 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
     processedUrls: customProcessedUrls,
     getSnippetCount,
     markUrlsAsProcessed
-  } = useProcessedUrls(sessionId, apiKey);
+  } = useProcessedUrls(sessionId);
   
   // Add the snippets hook for viewing snippets
   const {
@@ -104,7 +117,7 @@ export default function AiProcessing({ sessionId, apiKey }: AiProcessingProps) {
     selectedUrl,
     fetchSnippets,
     clearSnippets
-  } = useSnippets(apiKey);
+  } = useSnippets(sessionId);
   
   // Add new state for category selection
   const [selectedCategories, setSelectedCategories] = useState<{

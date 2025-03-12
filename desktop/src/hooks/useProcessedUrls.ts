@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createProviderWithKey } from '../lib/vector-db';
-import { ContextType } from '../lib/vector-db/provider';
-import { getSession } from '../lib/db';
+import { useVectorDB } from './useVectorDB';
 
 interface UrlSnippetCount {
   url: string;
@@ -11,42 +9,40 @@ interface UrlSnippetCount {
 /**
  * Hook to manage processed URLs for a session
  */
-export function useProcessedUrls(sessionId: number, apiKey?: string) {
+export function useProcessedUrls(sessionId: number) {
   const [processedUrls, setProcessedUrls] = useState<string[]>([]);
   const [urlSnippetCounts, setUrlSnippetCounts] = useState<UrlSnippetCount[]>([]);
   const [loading, setLoading] = useState(false);
   const [countLoading, setCountLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize provider with session config
-  const getProvider = async () => {
-    const session = await getSession(sessionId);
-    if (!session) {
-      throw new Error("Session not found");
+  // Use the vectorDB hook with sessionId
+  const { 
+    vectorDB,
+    loading: vectorDBLoading,
+    error: vectorDBError,
+    getDocumentsByFilters,
+    getSnippetCountForUrl,
+    updateURLStatus
+  } = useVectorDB(sessionId);
+
+  // Update error state when vectorDBError changes
+  useEffect(() => {
+    if (vectorDBError) {
+      setError(vectorDBError.message);
     }
-    
-    const provider = await createProviderWithKey(apiKey || '', session.context_type || ContextType.LOCAL);
-    await provider.initialize({
-      type: session.context_type || ContextType.LOCAL,
-      pineconeApiKey: session.pinecone_api_key,
-      pineconeEnvironment: session.pinecone_environment,
-      pineconeIndexName: session.pinecone_index
-    });
-    
-    return provider;
-  };
+  }, [vectorDBError]);
 
   // Load processed URLs from the database
   const loadProcessedUrls = async () => {
-    if (!sessionId) return;
+    if (!sessionId || !vectorDB) return;
     
     try {
       setLoading(true);
       setError(null);
       
       // Get all URLs for the session
-      const provider = await getProvider();
-      const results = await provider.getDocumentsByFilters({});
+      const results = await getDocumentsByFilters({});
       
       // Filter to only get processed URLs
       const processed = results
@@ -60,9 +56,9 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
       const initialCounts = processed.map(url => ({ url, count: null }));
       setUrlSnippetCounts(initialCounts);
       
-      // If we have API key, load snippet counts
-      if (apiKey && processed.length > 0) {
-        loadSnippetCounts(processed, apiKey);
+      // Load snippet counts
+      if (processed.length > 0) {
+        loadSnippetCounts(processed);
       }
     } catch (err) {
       console.error('Error loading processed URLs:', err);
@@ -73,13 +69,11 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
   };
   
   // Load snippet counts for URLs (optimized to avoid loading content)
-  const loadSnippetCounts = async (urls: string[], apiKey: string) => {
-    if (!urls.length) return;
+  const loadSnippetCounts = async (urls: string[]) => {
+    if (!urls.length || !vectorDB) return;
     
     try {
       setCountLoading(true);
-      
-      const provider = await getProvider();
       
       // Get counts for each URL - process in batches to avoid memory issues
       const BATCH_SIZE = 5;
@@ -91,8 +85,8 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
         
         for (const url of batchUrls) {
           try {
-            // Use the new optimized method that only gets count without loading content
-            const count = await provider.getSnippetCountForUrl(url);
+            // Use the hook's method that handles the optional nature of the function
+            const count = await getSnippetCountForUrl(url);
             batchCounts.push({
               url,
               count: count
@@ -131,15 +125,14 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
 
   // Mark URLs as processed in the database
   const markUrlsAsProcessed = async (urls: string[]) => {
-    if (!sessionId || !urls.length) return;
+    if (!sessionId || !urls.length || !vectorDB) return;
     
     try {
       setLoading(true);
       setError(null);
       
       // Get all URLs for the session to find their IDs
-      const provider = await getProvider();
-      const results = await provider.getDocumentsByFilters({});
+      const results = await getDocumentsByFilters({});
       
       // Find matching URLs and update their status
       const urlsToUpdate = results
@@ -148,7 +141,7 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
       
       // Update each URL status
       for (const url of urlsToUpdate) {
-        await provider.updateURLStatus(url, 'processed');
+        await updateURLStatus(url, 'processed');
       }
       
       // Add the new processed URLs to our state
@@ -166,9 +159,7 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
       });
       
       // Update the snippet counts
-      if (apiKey) {
-        loadSnippetCounts(urls, apiKey);
-      }
+      loadSnippetCounts(urls);
     } catch (err) {
       console.error('Error marking URLs as processed:', err);
       setError('Failed to update URL status');
@@ -185,15 +176,15 @@ export function useProcessedUrls(sessionId: number, apiKey?: string) {
 
   // Initial load of processed URLs
   useEffect(() => {
-    if (sessionId) {
+    if (sessionId && vectorDB) {
       loadProcessedUrls();
     }
-  }, [sessionId]);
+  }, [sessionId, vectorDB]);
 
   return {
     processedUrls,
     getSnippetCount,
-    loading: loading || countLoading,
+    loading: loading || countLoading || vectorDBLoading,
     error,
     loadProcessedUrls,
     markUrlsAsProcessed,
