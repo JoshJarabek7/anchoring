@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { DocumentationCategory, FullDocumentationSnippet } from '../lib/db';
+import { DocumentationCategory } from '../lib/db';
 import { useVectorDB } from './useVectorDB';
+import { UniversalDocument, DocumentCategory } from '../lib/vector-db/types';
 
 /**
  * Interface for a documentation snippet
@@ -39,7 +40,7 @@ export interface DocSearchParams {
 
 // Interface for filters
 export interface KnowledgeBaseFilters {
-  category: DocumentationCategory | 'all';
+  category: DocumentCategory | 'all';
   language?: string;
   language_version?: string;
   framework?: string;
@@ -59,7 +60,7 @@ interface ComponentOptions {
  */
 export function useKnowledgeBase(sessionId: number) {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchResults, setSearchResults] = useState<FullDocumentationSnippet[]>([]);
+  const [searchResults, setSearchResults] = useState<UniversalDocument[]>([]);
   const [filters, setFilters] = useState<KnowledgeBaseFilters>({
     category: 'all'
   });
@@ -69,7 +70,7 @@ export function useKnowledgeBase(sessionId: number) {
     frameworks: [],
     libraries: []
   });
-  const [snippets, setSnippets] = useState<FullDocumentationSnippet[]>([]);
+  const [snippets, setSnippets] = useState<UniversalDocument[]>([]);
   
   // Track initialization state
   const componentsLoaded = useRef(false);
@@ -109,14 +110,14 @@ export function useKnowledgeBase(sessionId: number) {
       console.log('Loading available components from vector DB...');
       
       // Get all component types
-      const languageResults = await getDocumentsByFilters({ category: DocumentationCategory.LANGUAGE }, 100);
-      const frameworkResults = await getDocumentsByFilters({ category: DocumentationCategory.FRAMEWORK }, 100);
-      const libraryResults = await getDocumentsByFilters({ category: DocumentationCategory.LIBRARY }, 100);
+      const languageResults = await getDocumentsByFilters({ category: DocumentCategory.LANGUAGE }, 100);
+      const frameworkResults = await getDocumentsByFilters({ category: DocumentCategory.FRAMEWORK }, 100);
+      const libraryResults = await getDocumentsByFilters({ category: DocumentCategory.LIBRARY }, 100);
       
       // Extract unique component names
-      const languages = [...new Set(languageResults.map(doc => doc.language).filter(Boolean))];
-      const frameworks = [...new Set(frameworkResults.map(doc => doc.framework).filter(Boolean))];
-      const libraries = [...new Set(libraryResults.map(doc => doc.library).filter(Boolean))];
+      const languages = [...new Set(languageResults.map(doc => doc.metadata.language).filter((lang): lang is string => typeof lang === 'string'))];
+      const frameworks = [...new Set(frameworkResults.map(doc => doc.metadata.framework).filter((framework): framework is string => typeof framework === 'string'))];
+      const libraries = [...new Set(libraryResults.map(doc => doc.metadata.library).filter((library): library is string => typeof library === 'string'))];
       
       setAvailableComponents({
         languages,

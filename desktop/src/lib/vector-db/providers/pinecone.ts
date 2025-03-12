@@ -6,10 +6,12 @@ import {
   VectorDBProvider,
   UniversalDocument,
   DocumentSchema,
-  DocumentCategory
+  DocumentCategory,
+  ExtendedVectorDBSettings
 } from '../types';
 import { generateEmbedding } from '../../openai';
 import { invoke } from '@tauri-apps/api/core';
+import { getVectorDBSettings } from '../../db';
 
 // Pinecone specific document type
 interface PineconeDocument {
@@ -45,8 +47,28 @@ interface PineconeIndex {
 }
 
 export class PineconeProvider implements VectorDBProvider {
-  async createInstance(sessionId: number): Promise<VectorDBInstance> {
-    return new PineconeInstance(sessionId);
+  async createInstance(sessionId: number, openAIApiKey: string): Promise<VectorDBInstance> {
+    // Get global vector DB settings
+    const settings = await getVectorDBSettings() as ExtendedVectorDBSettings;
+    
+    // Validate Pinecone settings
+    const hasPineconeSettings = settings.pinecone_api_key?.trim() && 
+                               settings.pinecone_index?.trim();
+                               
+    if (!hasPineconeSettings) {
+      throw new VectorDBError('Pinecone settings are not properly configured. Please check your settings.');
+    }
+    
+    const instance = new PineconeInstance(sessionId);
+    
+    // Initialize with validated settings
+    await instance.initialize({
+      apiKey: settings.pinecone_api_key,
+      indexName: settings.pinecone_index,
+      openAIApiKey: openAIApiKey
+    });
+    
+    return instance;
   }
 }
 
@@ -221,12 +243,17 @@ class PineconeInstance implements VectorDBInstance {
           .filter(([_, value]) => value !== undefined && value !== "");
         
         if (validFilters.length > 0) {
+          // Convert filters to Pinecone metadata format
           filter = validFilters.reduce((acc, [key, value]) => {
-            acc[key] = { $eq: value };
+            // Map top-level filters to metadata fields
+            const metadataKey = key === 'source_url' ? 'source_url' : key;
+            acc[metadataKey] = { $eq: value };
             return acc;
           }, {} as Record<string, any>);
         }
       }
+      
+      console.log('Pinecone search filter:', filter);
       
       // Query Pinecone
       const results = await this.index.query({
@@ -250,6 +277,7 @@ class PineconeInstance implements VectorDBInstance {
         return this._pineconeToPineconeDocument(doc);
       });
     } catch (error) {
+      console.error('Failed to search documents in Pinecone:', error);
       throw new VectorDBError('Failed to search documents in Pinecone', error as Error);
     }
   }
@@ -269,12 +297,17 @@ class PineconeInstance implements VectorDBInstance {
           .filter(([_, value]) => value !== undefined && value !== "");
         
         if (validFilters.length > 0) {
+          // Convert filters to Pinecone metadata format
           filter = validFilters.reduce((acc, [key, value]) => {
-            acc[key] = { $eq: value };
+            // Map top-level filters to metadata fields
+            const metadataKey = key === 'source_url' ? 'source_url' : key;
+            acc[metadataKey] = { $eq: value };
             return acc;
           }, {} as Record<string, any>);
         }
       }
+      
+      console.log('Pinecone filter:', filter);
       
       // Query Pinecone
       const results = await this.index.fetch({
@@ -297,6 +330,7 @@ class PineconeInstance implements VectorDBInstance {
         return this._pineconeToPineconeDocument(doc);
       });
     } catch (error) {
+      console.error('Failed to get documents by filters from Pinecone:', error);
       throw new VectorDBError('Failed to get documents by filters from Pinecone', error as Error);
     }
   }

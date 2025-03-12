@@ -222,26 +222,6 @@ export interface TechComponent {
 
 // DocumentationSnippet interfaces
 
-// Full documentation snippet for ChromaDB storage and processing
-export interface FullDocumentationSnippet {
-  id?: number;
-  snippet_id: string;
-  category: DocumentationCategory;
-  language?: string;
-  language_version?: string;
-  framework?: string;
-  framework_version?: string;
-  library?: string;
-  library_version?: string;
-  title: string;
-  description: string;
-  source_url?: string;
-  content: string;
-  concepts?: string[];
-  created_at?: string;
-  score?: number; // Similarity score from vector search
-}
-
 // Simplified documentation snippet for SQLite storage (reference table)
 export interface DocumentationSnippet {
   id?: number;

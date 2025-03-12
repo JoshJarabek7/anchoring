@@ -19,11 +19,7 @@ import {
   TechDetails
 } from "@/lib/pipeline";
 import { MarkdownCleanupValues } from "@/types/forms";
-import { 
-  DocumentationCategory,
-  FullDocumentationSnippet,
-  getSession
-} from "@/lib/db";
+import { DocumentationCategory, getSession } from "@/lib/db";
 import ProcessingOptions from "./ProcessingOptions";
 
 interface ProcessingPipelineProps {
@@ -37,27 +33,9 @@ interface ProcessingPipelineProps {
   frameworkVersion?: string;
   library?: string;
   libraryVersion?: string;
-  onComplete: (results: { url: string; snippets: FullDocumentationSnippet[] }[]) => void;
+  onComplete: (results: { url: string; snippets: UniversalDocument[] }[]) => void;
   onCancel: () => void;
 }
-
-const convertToUniversalDocument = (doc: FullDocumentationSnippet): UniversalDocument => ({
-  id: doc.snippet_id,
-  content: doc.content,
-  metadata: {
-    category: doc.category,
-    language: doc.language,
-    language_version: doc.language_version,
-    framework: doc.framework,
-    framework_version: doc.framework_version,
-    library: doc.library,
-    library_version: doc.library_version,
-    title: doc.title,
-    description: doc.description || "",
-    source_url: doc.source_url || "",
-    concepts: doc.concepts || []
-  }
-});
 
 export default function ProcessingPipeline({
   urls,
@@ -80,7 +58,7 @@ export default function ProcessingPipeline({
   const [progress, setProgress] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
   const processedUrlsRef = useRef(new Set<string>());
-  const [results, setResults] = useState<{ url: string; snippets: FullDocumentationSnippet[] }[]>([]);
+  const [results, setResults] = useState<{ url: string; snippets: UniversalDocument[] }[]>([]);
   
   useEffect(() => {
     if (!apiKey) {
@@ -249,15 +227,14 @@ export default function ProcessingPipeline({
     onCancel();
   };
 
-  const processDocuments = async (documents: FullDocumentationSnippet[]) => {
+  const processDocuments = async (documents: UniversalDocument[]) => {
     if (!isInitialized) {
       console.error("Vector database is not available");
       return;
     }
     
     try {
-      const universalDocs = documents.map(convertToUniversalDocument);
-      await addDocuments(universalDocs);
+      await addDocuments(documents);
       return true;
     } catch (error) {
       console.error("Error adding documents to vector database:", error);

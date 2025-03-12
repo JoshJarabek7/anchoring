@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { FullDocumentationSnippet } from '../lib/db';
 import { useVectorDB } from './useVectorDB';
+import { UniversalDocument } from '../lib/vector-db/types';
 
 /**
  * Hook to manage snippets for a specific URL
  */
 export function useSnippets(sessionId: number) {
-  const [snippets, setSnippets] = useState<FullDocumentationSnippet[]>([]);
+  const [snippets, setSnippets] = useState<UniversalDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export function useSnippets(sessionId: number) {
       
       // Get snippets for the URL (limited to 50 for memory conservation)
       const urlSnippets = await getDocumentsByFilters(
-        { metadata: { url } },
+        { source_url: url },
         50
       );
       

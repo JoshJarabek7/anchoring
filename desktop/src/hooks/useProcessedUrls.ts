@@ -46,10 +46,12 @@ export function useProcessedUrls(sessionId: number) {
       
       // Filter to only get processed URLs
       const processed = results
-        .map(doc => doc.source_url)
+        .map(doc => doc.metadata)
         .filter(Boolean)
-        .filter(url => url.status === 'processed');
-      
+        .filter(datum => datum.url_status === 'processed')
+        .map(datum => datum.source_url);
+
+      console.log('Processed URLs:', processed);
       setProcessedUrls(processed);
       
       // Initialize snippet counts as null (unknown)
@@ -136,8 +138,8 @@ export function useProcessedUrls(sessionId: number) {
       
       // Find matching URLs and update their status
       const urlsToUpdate = results
-        .filter(doc => urls.includes(doc.source_url))
-        .map(doc => doc.source_url);
+        .filter(doc => urls.includes(doc.metadata.source_url))
+        .map(doc => doc.metadata.source_url);
       
       // Update each URL status
       for (const url of urlsToUpdate) {

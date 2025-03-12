@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { chunkTextRecursively, initializeOpenAI } from './openai';
-import { FullDocumentationSnippet, DocumentationCategory } from './db';
+import { DocumentationCategory } from './db';
 import { zodResponseFormat } from 'openai/helpers/zod';
+import { UniversalDocument, DocumentCategory as VectorDBCategory } from './vector-db/types';
 
 /**
  * Schema for a documentation snippet from structured output
@@ -46,7 +47,7 @@ export async function processMarkdownIntoSnippets(
     library?: string;
     library_version?: string;
   }
-): Promise<FullDocumentationSnippet[]> {
+): Promise<UniversalDocument[]> {
   console.log("================================");
   console.log("PROCESSING MARKDOWN INTO SNIPPETS");
   console.log("================================");
@@ -64,8 +65,6 @@ export async function processMarkdownIntoSnippets(
 
     // First chunk the markdown to ensure it fits within token limits
     console.log("Chunking markdown for processing");
-    // Set chunk size to 100,000 to better utilize GPT-4o-mini's 128k context window, no overlap needed with semantic chunking
-    // First ensure markdown is a proper string
     if (!markdown || typeof markdown !== 'string') {
       console.error("Invalid markdown received:", markdown);
       throw new Error("Invalid markdown format: not a string");
@@ -74,7 +73,7 @@ export async function processMarkdownIntoSnippets(
     const chunks = await chunkTextRecursively(markdown, 120000, "gpt-4o-mini", 500, "markdown");
     console.log(`Markdown split into ${chunks.length} chunks`);
     
-    const allSnippets: FullDocumentationSnippet[] = [];
+    const allSnippets: UniversalDocument[] = [];
     
     // Process chunks in parallel with concurrency control
     const MAX_CONCURRENT = 3; // Process 3 chunks at a time
@@ -122,32 +121,36 @@ export async function processMarkdownIntoSnippets(
             
             console.log(`✅ Chunk ${chunkIndex+1}/${chunks.length}: Received ${validatedOutput.snippets.length} snippets from OpenAI`);
             
-            // Convert to our internal DocumentationSnippet format
+            // Convert directly to UniversalDocument format
             const snippets = validatedOutput.snippets.map((snippet, snippetIndex) => {
               // Create a unique ID for each snippet
-              const snippetId = `${sourceUrl.replace(/[^a-zA-Z0-9]/g, '_')}_${chunkIndex}_${snippetIndex}`;
+              const id = `${sourceUrl.replace(/[^a-zA-Z0-9]/g, '_')}_${chunkIndex}_${snippetIndex}`;
               
               if (!snippet.title || !snippet.description || !snippet.content) {
                 console.error(`❌ Snippet ${chunkIndex}_${snippetIndex} has missing required fields`);
                 return null;
               }
               
-              return {
-                category,
-                language: technicalInfo.language,
-                language_version: technicalInfo.language_version,
-                framework: technicalInfo.framework,
-                framework_version: technicalInfo.framework_version,
-                library: technicalInfo.library,
-                library_version: technicalInfo.library_version,
-                snippet_id: snippetId,
-                source_url: sourceUrl,
-                title: snippet.title,
-                description: snippet.description,
+              const universalDoc: UniversalDocument = {
+                id,
                 content: snippet.content,
-                concepts: snippet.concepts || []
+                metadata: {
+                  category: category.toLowerCase() as VectorDBCategory,
+                  language: technicalInfo.language,
+                  language_version: technicalInfo.language_version,
+                  framework: technicalInfo.framework,
+                  framework_version: technicalInfo.framework_version,
+                  library: technicalInfo.library,
+                  library_version: technicalInfo.library_version,
+                  title: snippet.title,
+                  description: snippet.description,
+                  source_url: sourceUrl,
+                  concepts: snippet.concepts || []
+                }
               };
-            }).filter((snippet): snippet is any => snippet !== null);
+              
+              return universalDoc;
+            }).filter((snippet): snippet is UniversalDocument => snippet !== null);
             
             const chunkEndTime = performance.now();
             console.log(`✅ Processed chunk ${chunkIndex+1}/${chunks.length} in ${((chunkEndTime - chunkStartTime) / 1000).toFixed(2)}s`);

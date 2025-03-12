@@ -20,6 +20,7 @@ export const DocumentSchema = z.object({
   library_version: z.string().optional(),
   snippet_id: z.string(),
   source_url: z.string(),
+  url_status: z.string().optional(),
   title: z.string(),
   description: z.string(),
   content: z.string(),
@@ -103,12 +104,18 @@ export interface VectorDBProvider {
   /**
    * Create a new instance for the given session
    */
-  createInstance(sessionId: number): Promise<VectorDBInstance>;
+  createInstance(sessionId: number, openAIApiKey: string): Promise<VectorDBInstance>;
 }
 
 export interface VectorDBConfig {
   provider: string;
   config: Record<string, any>;
+}
+
+export interface ExtendedVectorDBSettings {
+  pinecone_api_key: string;
+  pinecone_index: string;
+  openai_key?: string;
 }
 
 export class VectorDBError extends Error {

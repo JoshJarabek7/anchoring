@@ -34,41 +34,39 @@ export default function CrawlerForm({
   onSettingsSaved
 }: CrawlerFormProps) {
   const [saving, setSaving] = useState(false);
-  const [prefixPath, setPrefixPath] = useState(existingSettings?.prefix_path || "");
-  const [antiPaths, setAntiPaths] = useState(existingSettings?.anti_paths || "");
-  const [antiKeywords, setAntiKeywords] = useState(existingSettings?.anti_keywords || "");
-  const [maxConcurrentRequests, setMaxConcurrentRequests] = useState(existingSettings?.max_concurrent_requests || 4);
-  const [unlimitedParallelism, setUnlimitedParallelism] = useState(existingSettings?.unlimited_parallelism || false);
+  const [prefixPath, setPrefixPath] = useState(existingSettings?.prefix_path ?? "");
+  const [antiPaths, setAntiPaths] = useState(existingSettings?.anti_paths ?? "");
+  const [antiKeywords, setAntiKeywords] = useState(existingSettings?.anti_keywords ?? "");
+  const [maxConcurrentRequests, setMaxConcurrentRequests] = useState(existingSettings?.max_concurrent_requests ?? 4);
+  const [unlimitedParallelism, setUnlimitedParallelism] = useState(existingSettings?.unlimited_parallelism ?? false);
   
   // Update local state when existingSettings changes
   useEffect(() => {
     console.log("Updating CrawlerForm with settings:", existingSettings);
-    if (existingSettings) {
-      setPrefixPath(existingSettings.prefix_path || "");
-      setAntiPaths(existingSettings.anti_paths || "");
-      setAntiKeywords(existingSettings.anti_keywords || "");
-      setMaxConcurrentRequests(existingSettings.max_concurrent_requests || 4);
-      setUnlimitedParallelism(existingSettings.unlimited_parallelism || false);
-      
-      // Also update the form state
-      form.reset({
-        prefix_path: existingSettings.prefix_path || "",
-        anti_paths: existingSettings.anti_paths || "",
-        anti_keywords: existingSettings.anti_keywords || "",
-        max_concurrent_requests: existingSettings.max_concurrent_requests || 4,
-        unlimited_parallelism: existingSettings.unlimited_parallelism || false,
-      });
-    }
+    setPrefixPath(existingSettings?.prefix_path ?? "");
+    setAntiPaths(existingSettings?.anti_paths ?? "");
+    setAntiKeywords(existingSettings?.anti_keywords ?? "");
+    setMaxConcurrentRequests(existingSettings?.max_concurrent_requests ?? 4);
+    setUnlimitedParallelism(existingSettings?.unlimited_parallelism ?? false);
+    
+    // Also update the form state
+    form.reset({
+      prefix_path: existingSettings?.prefix_path ?? "",
+      anti_paths: existingSettings?.anti_paths ?? "",
+      anti_keywords: existingSettings?.anti_keywords ?? "",
+      max_concurrent_requests: existingSettings?.max_concurrent_requests ?? 4,
+      unlimited_parallelism: existingSettings?.unlimited_parallelism ?? false,
+    });
   }, [existingSettings]);
   
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      prefix_path: existingSettings?.prefix_path || "",
-      anti_paths: existingSettings?.anti_paths || "",
-      anti_keywords: existingSettings?.anti_keywords || "",
-      max_concurrent_requests: existingSettings?.max_concurrent_requests || 4,
-      unlimited_parallelism: existingSettings?.unlimited_parallelism || false,
+      prefix_path: existingSettings?.prefix_path ?? "",
+      anti_paths: existingSettings?.anti_paths ?? "",
+      anti_keywords: existingSettings?.anti_keywords ?? "",
+      max_concurrent_requests: existingSettings?.max_concurrent_requests ?? 4,
+      unlimited_parallelism: existingSettings?.unlimited_parallelism ?? false,
     },
     mode: "all",
   });

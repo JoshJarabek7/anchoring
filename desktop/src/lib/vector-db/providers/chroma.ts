@@ -45,8 +45,18 @@ export interface ChromaConfig {
 }
 
 export class ChromaProvider implements VectorDBProvider {
-  async createInstance(sessionId: number): Promise<VectorDBInstance> {
-    return new ChromaInstance(sessionId);
+  async createInstance(sessionId: number, openAIApiKey: string): Promise<VectorDBInstance> {
+    const instance = new ChromaInstance(sessionId);
+    
+    // Handle initialization with default configuration
+    await instance.initialize({
+      host: 'localhost',
+      port: 8001,
+      apiKey: openAIApiKey,
+      collectionName: `session-${sessionId}`
+    });
+    
+    return instance;
   }
 }
 
@@ -96,9 +106,20 @@ class ChromaInstance implements VectorDBInstance {
       };
       
       // Verify server is healthy
-      const response = await fetch(`${chromaUrl}/api/v1/heartbeat`);
-      if (!response.ok) {
-        throw new Error("ChromaDB server not healthy");
+      try {
+        const response = await fetch(`${chromaUrl}/api/v1/heartbeat`);
+        if (!response.ok) {
+          throw new Error(`ChromaDB server returned status ${response.status}`);
+        }
+      } catch (error) {
+        if (error instanceof TypeError && error.message.includes('sending request')) {
+          throw new VectorDBError(
+            `ChromaDB server not running at ${chromaUrl}. Please ensure ChromaDB is running and accessible.`
+          );
+        }
+        throw new VectorDBError(
+          `ChromaDB server not healthy: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
       
       // Get or create collection
@@ -133,7 +154,7 @@ class ChromaInstance implements VectorDBInstance {
   
   private _universalToChromaDocument = async (doc: UniversalDocument): Promise<ChromaDocument | null> => {
     try {
-      // Validate document
+      // Validate document using schema
       const validatedDoc = DocumentSchema.parse({
         category: doc.metadata.category,
         language: doc.metadata.language,
@@ -152,7 +173,7 @@ class ChromaInstance implements VectorDBInstance {
       });
       
       // Generate embedding
-      const embedding = await generateEmbedding(doc.content, this.config.apiKey);
+      const embedding = await generateEmbedding(validatedDoc.content, this.config.apiKey);
       
       // Convert to ChromaDocument format
       return {
@@ -176,15 +197,19 @@ class ChromaInstance implements VectorDBInstance {
       };
     } catch (error) {
       console.error("Error converting to ChromaDocument:", error);
+      if (error instanceof Error) {
+        console.error("Validation error details:", error.message);
+        console.error("Document that failed validation:", JSON.stringify(doc, null, 2));
+      }
       return null;
     }
   };
   
-  private _chromaToUniversalDocument = (doc: any): UniversalDocument => {
-    const metadata = doc.metadata || {};
+  private _chromaToUniversalDocument = (doc: ChromaDocument): UniversalDocument => {
+    const metadata = doc.metadata;
     return {
       id: doc.id,
-      content: doc.content || doc.documents || "",
+      content: doc.content,
       metadata: {
         category: metadata.category,
         language: metadata.language,
@@ -193,8 +218,8 @@ class ChromaInstance implements VectorDBInstance {
         framework_version: metadata.framework_version,
         library: metadata.library,
         library_version: metadata.library_version,
-        title: metadata.title || "Untitled",
-        description: metadata.description || "",
+        title: metadata.title,
+        description: metadata.description,
         source_url: metadata.source_url,
         concepts: metadata.concepts ? metadata.concepts.split(",") : [],
         status: metadata.status
@@ -212,7 +237,7 @@ class ChromaInstance implements VectorDBInstance {
       
       // Convert UniversalDocuments to ChromaDocuments
       const processedDocs = await Promise.all(documents.map(doc => this._universalToChromaDocument(doc)));
-      const validDocs = processedDocs.filter((doc): doc is NonNullable<typeof doc> => doc !== null);
+      const validDocs = processedDocs.filter((doc): doc is ChromaDocument => doc !== null);
       
       if (validDocs.length > 0) {
         await this.collection.add({
@@ -229,39 +254,6 @@ class ChromaInstance implements VectorDBInstance {
     } catch (error) {
       throw new VectorDBError('Failed to add documents to ChromaDB', error as Error);
     }
-  }
-  
-  private _formatSearchResults(results: any): UniversalDocument[] {
-    if (!results?.ids?.length) {
-      return [];
-    }
-    
-    return results.ids.map((id: string, index: number) => {
-      const metadata = results.metadatas?.[index] || {};
-      const content = results.documents?.[index] || "";
-      const score = results.distances
-        ? Math.max(0, 1.0 - (results.distances[index] / 2.0))
-        : undefined;
-      
-      return {
-        id,
-        content,
-        metadata: {
-          category: metadata.category,
-          language: metadata.language,
-          language_version: metadata.language_version,
-          framework: metadata.framework,
-          framework_version: metadata.framework_version,
-          library: metadata.library,
-          library_version: metadata.library_version,
-          title: metadata.title || "Untitled",
-          description: metadata.description || "",
-          source_url: metadata.source_url,
-          concepts: metadata.concepts ? metadata.concepts.split(",") : [],
-          status: metadata.status
-        }
-      };
-    });
   }
   
   async searchDocuments(query: string | number[], filters?: DocumentFilter, limit: number = 10): Promise<UniversalDocument[]> {
@@ -298,6 +290,7 @@ class ChromaInstance implements VectorDBInstance {
         include: ["metadatas", "documents", "distances"]
       });
       
+      // Convert results to UniversalDocument format
       return this._formatSearchResults(results);
     } catch (error) {
       throw new VectorDBError('Failed to search documents in ChromaDB', error as Error);
@@ -332,10 +325,44 @@ class ChromaInstance implements VectorDBInstance {
         include: ["metadatas", "documents"]
       });
       
+      // Convert results to UniversalDocument format
       return this._formatSearchResults(results);
     } catch (error) {
       throw new VectorDBError('Failed to get documents by filters from ChromaDB', error as Error);
     }
+  }
+  
+  private _formatSearchResults(results: any): UniversalDocument[] {
+    if (!results?.ids?.length) {
+      return [];
+    }
+    
+    return results.ids.map((id: string, index: number) => {
+      const metadata = results.metadatas?.[index] || {};
+      const content = results.documents?.[index] || "";
+      
+      const chromaDoc: ChromaDocument = {
+        id,
+        content,
+        metadata: {
+          category: metadata.category,
+          language: metadata.language,
+          language_version: metadata.language_version,
+          framework: metadata.framework,
+          framework_version: metadata.framework_version,
+          library: metadata.library,
+          library_version: metadata.library_version,
+          title: metadata.title || "Untitled",
+          description: metadata.description || "",
+          source_url: metadata.source_url || "",
+          concepts: metadata.concepts || "",
+          status: metadata.status
+        },
+        embedding: [] // Not needed for conversion back to UniversalDocument
+      };
+      
+      return this._chromaToUniversalDocument(chromaDoc);
+    });
   }
   
   async getSnippetCountForUrl(url: string): Promise<number> {
@@ -362,7 +389,7 @@ class ChromaInstance implements VectorDBInstance {
     
     try {
       // Get existing documents for this URL
-      const documents = await this.getDocumentsByFilters({ url });
+      const documents = await this.getDocumentsByFilters({ source_url: url });
       
       // Update each document's metadata with the new status
       const updatedDocuments = documents.map(doc => ({
@@ -374,7 +401,6 @@ class ChromaInstance implements VectorDBInstance {
       }));
       
       // Remove old documents and add updated ones
-      // Note: In a real implementation, we would use a proper update mechanism
       if (updatedDocuments.length > 0) {
         await this.addDocuments(updatedDocuments);
       }
