@@ -26,8 +26,9 @@
       "identifier": "fs:scope",
       "allow": [
         { "path": "$HOME/**" },
-        { "path": "/Users/woof/GauntletAI/anchoring/.chroma" },
-        { "path": "/Users/woof/GauntletAI/anchoring/.chroma/**" }
+        { "path": "$RESOURCE/**" },
+        { "path": "$CONFIG/**" },
+        { "path": "$DATA/**" }
       ]
     },
     {

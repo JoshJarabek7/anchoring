@@ -30,36 +30,10 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
-:: Check Python version but only as informational
+:: Check Python version (informational only)
 for /f "tokens=2" %%I in ('python --version 2^>^&1') do set "PYTHON_VERSION=%%I"
-for /f "tokens=1,2 delims=." %%a in ("%PYTHON_VERSION%") do (
-  set "PYTHON_MAJOR=%%a"
-  set "PYTHON_MINOR=%%b"
-)
-
-if %PYTHON_MAJOR% LSS 3 (
-  echo Warning: System Python version %PYTHON_VERSION% is older than 3.10.
-  echo uv will attempt to use or download a compatible version for the virtual environment.
-)
-
-if %PYTHON_MAJOR% EQU 3 (
-  if %PYTHON_MINOR% LSS 10 (
-    echo Warning: System Python version %PYTHON_VERSION% is older than 3.10.
-    echo uv will attempt to use or download a compatible version for the virtual environment.
-  )
-)
-
-if %PYTHON_MAJOR% GTR 3 (
-  echo Warning: System Python version %PYTHON_VERSION% is 3.13 or newer.
-  echo uv will attempt to use or download a compatible version for the virtual environment.
-)
-
-if %PYTHON_MAJOR% EQU 3 (
-  if %PYTHON_MINOR% GEQ 13 (
-    echo Warning: System Python version %PYTHON_VERSION% is 3.13 or newer.
-    echo uv will attempt to use or download a compatible version for the virtual environment.
-  )
-)
+echo Detected Python version: %PYTHON_VERSION%
+echo Note: uv will use Python ^>=3.10,^<3.13 for running MCP components regardless of system Python version.
 
 :: Check for Rust
 where rustc >nul 2>nul
@@ -133,59 +107,18 @@ if not exist "%MCP_ENV_FILE%" (
   pause
 )
 
-:: Set up virtual environment for MCP server
-echo Setting up Python virtual environment...
-cd mcp-server
+:: Install MCP server with uv run
+echo Setting up MCP server with Claude...
 
-:: Create virtual environment using uv if it doesn't exist
-if not exist ".venv" (
-  echo Creating virtual environment with Python 3.10-3.12...
-  uv venv --python ">=3.10,<3.13" .venv
-  
-  :: Check if venv creation was successful
-  if not exist ".venv" (
-    echo Error: Failed to create virtual environment. Please make sure you have uv installed correctly.
-    exit /b 1
-  )
-)
+:: Run setup_collection.py with uv run (commented out)
+:: uv run --python ">=3.10,<3.13" --with chromadb --with mcp[cli] --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken python "%MCP_SERVER_DIR%\app\setup_collection.py"
 
-:: Activate virtual environment
-echo Activating virtual environment...
-call .venv\Scripts\activate.bat
-
-:: Install dependencies
-echo Installing MCP server dependencies...
-uv add -r requirements.txt
-
-:: Install MCP CLI in the virtual environment if needed
-where mcp >nul 2>nul
-if %ERRORLEVEL% NEQ 0 (
-  echo Installing MCP CLI in virtual environment...
-  uv add "mcp[cli]"
-)
-
-:: Check if MCP is installed and register our server
-echo Checking MCP installation...
-where mcp >nul 2>nul
-if %ERRORLEVEL% EQU 0 (
-  :: Run setup_collection.py first
-  echo Setting up ChromaDB collection...
-  python "%CD%\app\setup_collection.py"
-  
-  :: Then install/reinstall the MCP server
-  echo Installing MCP server with Claude...
-  mcp install "%CD%\app\server.py"
-) else (
-  echo Warning: MCP CLI installation failed. Some features may not work correctly.
-)
-
-:: Deactivate the virtual environment
-call deactivate
-cd ..
+:: Install MCP server
+uv run --python ">=3.10,<3.13" --with chromadb --with mcp[cli] --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "%MCP_SERVER_DIR%\app\server.py"
 
 :: Install desktop dependencies if needed
 echo Installing desktop dependencies...
-cd desktop
+cd "%PROJECT_ROOT%\desktop"
 call npm install
 
 :: Start the application
@@ -197,7 +130,7 @@ echo Application closed.
 
 :: Clean up containers when the app closes
 echo Cleaning up containers...
-cd "%~dp0mcp-server"
+cd "%SCRIPT_DIR%\mcp-server"
 :: Stop containers but preserve volumes (to keep ChromaDB data)
 docker-compose down --remove-orphans
 echo Cleanup complete.

@@ -97,6 +97,23 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
       // Reset crawler state before starting
       resetCrawlerState();
       
+      // Get crawl options from the URL list component
+      // Since we can't directly access the state from URLList, we'll use local storage
+      // as a temporary communication channel
+      const crawlOptionsStr = localStorage.getItem('anchoring_crawl_options');
+      let skipProcessedUrls = true; // default to true for backward compatibility
+      let crawlPendingOnly = false; // default to false for backward compatibility
+      
+      if (crawlOptionsStr) {
+        try {
+          const options = JSON.parse(crawlOptionsStr);
+          skipProcessedUrls = options.skipProcessed;
+          crawlPendingOnly = options.crawlPendingOnly;
+        } catch (e) {
+          console.error("Error parsing crawl options from local storage:", e);
+        }
+      }
+      
       // Start crawling for each selected URL
       for (const url of selectedUrls) {
         await startCrawler({
@@ -106,7 +123,9 @@ const CrawlerPage = ({ sessionId }: { sessionId: number | null }) => {
           antiKeywords: settings.anti_keywords ? settings.anti_keywords.split(',').map(k => k.trim()) : [],
           sessionId: sessionId as number,
           maxConcurrentRequests: settings.max_concurrent_requests,
-          unlimitedParallelism: !!settings.unlimited_parallelism
+          unlimitedParallelism: !!settings.unlimited_parallelism,
+          skipProcessedUrls: skipProcessedUrls,
+          crawlPendingOnly: crawlPendingOnly
         });
       }
     } catch (error) {
@@ -269,6 +288,7 @@ const MainApp = () => {
   const [apiKey, setApiKey] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Load OpenAI API key
   useEffect(() => {
@@ -336,6 +356,8 @@ const MainApp = () => {
   useEffect(() => {
     const loadSessions = async () => {
       try {
+        // Dynamically import getSessions
+        const { getSessions } = await import("./lib/db");
         const result = await getSessions();
         setSessions(result);
         setLoading(false);
@@ -535,23 +557,75 @@ const MainApp = () => {
 
 function App() {
   const [loading, setLoading] = useState(true);
-
-  // Initialize the database and application
+  const [error, setError] = useState<string | null>(null);
+  
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        setLoading(true);
-        
         // Initialize the database
         const { initDB } = await import("./lib/db");
         await initDB();
         
+        // Verify database schema is correct
+        await verifyDatabaseSchema();
+        
         console.log("Database initialized successfully");
-      } catch (error) {
-        console.error("Error initializing application:", error);
-        toast.error("Failed to initialize application. Please check the console for details.");
-      } finally {
         setLoading(false);
+      } catch (err) {
+        console.error("Error initializing application:", err);
+        setError("Failed to initialize application. Please restart.");
+        setLoading(false);
+      }
+    };
+    
+    // Verify that the database schema is correctly applied
+    const verifyDatabaseSchema = async () => {
+      try {
+        // Import Database from tauri plugin
+        const Database = (await import('@tauri-apps/plugin-sql')).default;
+        
+        // Connect directly to the database
+        const db = await Database.load("sqlite:anchoring.db");
+        
+        // Check that we don't have both old and new tables
+        const tables = await db.select<{ name: string }[]>(`
+          SELECT name FROM sqlite_master 
+          WHERE type='table' AND name NOT LIKE 'sqlite_%'
+        `);
+        
+        const tableNames = tables.map(t => t.name);
+        
+        // Check for problematic table combinations
+        if (tableNames.includes('crawl_sessions_new') && tableNames.includes('crawl_sessions')) {
+          console.warn("Found both crawl_sessions and crawl_sessions_new - schema needs repair");
+          
+          // Import and run the migrations directly to fix it
+          const { runMigrations } = await import("./lib/migrations");
+          await runMigrations(db);
+          
+          console.log("Schema repair completed");
+        }
+        
+        // Verify crawl_sessions has the correct structure (without chroma_path)
+        const sessionColumns = await db.select<{ name: string }[]>(
+          "PRAGMA table_info(crawl_sessions)"
+        );
+        
+        const columnNames = sessionColumns.map(c => c.name);
+        if (columnNames.includes('chroma_path')) {
+          console.warn("crawl_sessions table still has chroma_path column - schema needs migration");
+          
+          // Import and run the migrations directly to fix it
+          const { runMigrations } = await import("./lib/migrations");
+          await runMigrations(db);
+          
+          console.log("Schema migration completed");
+        }
+        
+        return true;
+      } catch (error) {
+        console.error("Error verifying database schema:", error);
+        return false;
       }
     };
     
