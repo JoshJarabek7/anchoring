@@ -731,6 +731,80 @@ async fn search_documents(
     Ok(results)
 }
 
+#[tauri::command]
+async fn fetch_documents(
+    session_id: u64,
+    filter: Option<serde_json::Value>,
+    limit: Option<usize>,
+) -> Result<Vec<PineconeSearchResult>, String> {
+    println!("🔍 [Tauri Command] fetch_documents called with filter: {:?}", filter);
+    
+    let sessions = PINECONE_SESSIONS.lock().await;
+    let service = match sessions.get(&session_id) {
+        Some(service) => service,
+        None => {
+            println!("❌ [Tauri Command] Vector DB not initialized for session: {}", session_id);
+            return Err("Vector DB not initialized for this session".to_string());
+        }
+    };
+
+    // Use empty vector for fetch (no similarity search)
+    let empty_embedding = vec![0.0; 3072]; // Standard OpenAI embedding size
+    
+    // Search for vectors without similarity scoring
+    let vectors = match service.search(empty_embedding, filter, limit.unwrap_or(100)).await {
+        Ok(vectors) => vectors,
+        Err(e) => {
+            println!("❌ [Tauri Command] Failed to fetch documents: {}", e);
+            return Err(format!("Failed to fetch documents: {}", e));
+        }
+    };
+    
+    // Convert vectors to results
+    let mut results = Vec::new();
+    
+    for v in vectors {
+        // Convert Pinecone metadata to serde_json::Value if present
+        let metadata = v.metadata.map(|md| {
+            let mut map = serde_json::Map::new();
+            for (key, value) in md.fields {
+                if let Some(kind) = value.kind {
+                    let json_value = match kind {
+                        pinecone_sdk::models::Kind::StringValue(s) => {
+                            // Try to parse string values that might be JSON
+                            if let Ok(parsed) = serde_json::from_str(&s) {
+                                parsed
+                            } else {
+                                serde_json::Value::String(s)
+                            }
+                        },
+                        pinecone_sdk::models::Kind::NumberValue(n) => {
+                            if let Some(num) = serde_json::Number::from_f64(n) {
+                                serde_json::Value::Number(num)
+                            } else {
+                                serde_json::Value::Null
+                            }
+                        },
+                        pinecone_sdk::models::Kind::BoolValue(b) => serde_json::Value::Bool(b),
+                        _ => serde_json::Value::Null,
+                    };
+                    map.insert(key, json_value);
+                }
+            }
+            serde_json::Value::Object(map)
+        });
+        
+        results.push(PineconeSearchResult {
+            id: v.id,
+            values: v.values,
+            metadata,
+        });
+    }
+    
+    println!("✅ [Tauri Command] Fetch returned {} results", results.len());
+    Ok(results)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -745,10 +819,11 @@ pub fn run() {
             split_text_by_tokens,
             count_tokens,
             vector_search,
-            // Add new Pinecone commands
+            // Pinecone commands
             initialize_vector_db,
             add_documents,
             search_documents,
+            fetch_documents,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

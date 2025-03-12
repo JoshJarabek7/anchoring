@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { DocumentationCategory } from '../lib/db';
 import { useVectorDB } from './useVectorDB';
 import { UniversalDocument, DocumentCategory } from '../lib/vector-db/types';
+
+// Debug flag - set to true to enable verbose logging
+const DEBUG = false;
+
+const log = {
+  debug: (...args: any[]) => DEBUG && console.log('[KnowledgeBase]:', ...args),
+  error: (...args: any[]) => console.error('[KnowledgeBase Error]:', ...args)
+};
 
 /**
  * Interface for a documentation snippet
@@ -89,7 +96,7 @@ export function useKnowledgeBase(sessionId: number) {
   // Update error state when vectorDBError changes
   useEffect(() => {
     if (vectorDBError) {
-      console.error('Vector DB error:', vectorDBError);
+      log.error('Vector DB error:', vectorDBError);
       setError(vectorDBError.message);
     }
   }, [vectorDBError]);
@@ -97,17 +104,17 @@ export function useKnowledgeBase(sessionId: number) {
   // Load available components for filters
   const loadAvailableComponents = async () => {
     if (!isInitialized) {
-      console.warn('Vector DB is not initialized, cannot load components');
+      log.debug('Vector DB not initialized, skipping component load');
       return;
     }
     
     if (componentsLoaded.current) {
-      console.log('Components already loaded, skipping');
+      log.debug('Components already loaded, skipping');
       return;
     }
     
     try {
-      console.log('Loading available components from vector DB...');
+      log.debug('Loading available components...');
       
       // Get all component types
       const languageResults = await getDocumentsByFilters({ category: DocumentCategory.LANGUAGE }, 100);
@@ -126,9 +133,9 @@ export function useKnowledgeBase(sessionId: number) {
       });
       
       componentsLoaded.current = true;
-      console.log('Loaded components:', { languages, frameworks, libraries });
+      log.debug('Components loaded:', { languages, frameworks, libraries });
     } catch (err) {
-      console.error('Error loading components:', err);
+      log.error('Failed to load components:', err);
       setError('Failed to load available components');
     }
   };
@@ -142,7 +149,7 @@ export function useKnowledgeBase(sessionId: number) {
     
     if (!isInitialized) {
       const errorMsg = 'Vector database not initialized. Please configure it in settings.';
-      console.error(errorMsg);
+      log.error(errorMsg);
       setError(errorMsg);
       return;
     }
@@ -170,14 +177,14 @@ export function useKnowledgeBase(sessionId: number) {
       if (filtersToUse.library) searchFiltersObj.library = filtersToUse.library;
       if (filtersToUse.library_version) searchFiltersObj.library_version = filtersToUse.library_version;
       
-      console.log(`Searching for "${query}" with filters:`, searchFiltersObj);
+      log.debug(`Searching with filters:`, searchFiltersObj);
       
       // Search with the query and filters - limit to 10 results for memory savings
       const results = await searchDocuments(query, searchFiltersObj, 10);
-      console.log(`Found ${results.length} results for "${query}"`);
+      log.debug(`Found ${results.length} results`);
       setSearchResults(results);
     } catch (err) {
-      console.error('Error searching snippets:', err);
+      log.error('Search failed:', err);
       setError('Failed to search documentation snippets');
       setSearchResults([]);
     }
@@ -200,24 +207,24 @@ export function useKnowledgeBase(sessionId: number) {
   // Load components and knowledge base when vector DB becomes initialized
   useEffect(() => {
     if (isInitialized && !componentsLoaded.current) {
-      console.log('Vector DB is initialized, loading components');
+      log.debug('Loading components');
       loadAvailableComponents();
     }
-  }, [isInitialized]); // Depend on isInitialized instead of available
+  }, [isInitialized]);
 
   // Load knowledge base separately
   useEffect(() => {
     if (isInitialized && !knowledgeBaseLoaded.current) {
-      console.log('Vector DB is initialized, loading knowledge base');
+      log.debug('Loading knowledge base');
       
       const loadKnowledgeBase = async () => {
         try {
           knowledgeBaseLoaded.current = true;
           const results = await getDocumentsByFilters({}, 100);
-          console.log(`Loaded ${results.length} snippets from knowledge base`);
+          log.debug(`Loaded ${results.length} snippets`);
           setSnippets(results);
         } catch (err) {
-          console.error('Error loading knowledge base:', err);
+          log.error('Failed to load knowledge base:', err);
           setError(err instanceof Error ? err.message : 'Failed to load knowledge base');
         }
       };

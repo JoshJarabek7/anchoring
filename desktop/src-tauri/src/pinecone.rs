@@ -208,6 +208,26 @@ fn convert_json_to_metadata(json: serde_json::Value) -> Metadata {
     if let serde_json::Value::Object(map) = json {
         for (key, value) in map {
             let kind = match value {
+                serde_json::Value::Object(obj) => {
+                    // Handle Pinecone filter format: { field: { $eq: value } }
+                    if let Some(eq_value) = obj.get("$eq") {
+                        match eq_value {
+                            serde_json::Value::String(s) => Some(Kind::StringValue(s.clone())),
+                            serde_json::Value::Number(n) => {
+                                if let Some(f) = n.as_f64() {
+                                    Some(Kind::NumberValue(f))
+                                } else {
+                                    None
+                                }
+                            },
+                            serde_json::Value::Bool(b) => Some(Kind::BoolValue(*b)),
+                            _ => None,
+                        }
+                    } else {
+                        // Convert object to string to preserve the data
+                        Some(Kind::StringValue(serde_json::to_string(&obj).unwrap_or_default()))
+                    }
+                },
                 serde_json::Value::String(s) => Some(Kind::StringValue(s)),
                 serde_json::Value::Number(n) => {
                     if let Some(i) = n.as_i64() {
@@ -222,10 +242,6 @@ fn convert_json_to_metadata(json: serde_json::Value) -> Metadata {
                 serde_json::Value::Array(arr) => {
                     // Convert array to string to preserve the data
                     Some(Kind::StringValue(serde_json::to_string(&arr).unwrap_or_default()))
-                },
-                serde_json::Value::Object(obj) => {
-                    // Convert nested object to string to preserve the data
-                    Some(Kind::StringValue(serde_json::to_string(&obj).unwrap_or_default()))
                 },
                 serde_json::Value::Null => None,
             };

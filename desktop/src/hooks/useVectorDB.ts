@@ -12,6 +12,14 @@ import { getSessionVectorDBMapping } from '../lib/db';
 const vectorDBCache = new Map<number, VectorDBInstance>();
 const initializedSessions = new Set<number>();
 
+// Debug flag - set to true to enable verbose logging
+const DEBUG = false;
+
+const log = {
+  debug: (...args: any[]) => DEBUG && console.log('[VectorDB]:', ...args),
+  error: (...args: any[]) => console.error('[VectorDB Error]:', ...args)
+};
+
 interface VectorDBHookResult {
   vectorDB: VectorDBInstance | null;
   loading: boolean;
@@ -55,7 +63,7 @@ export function useVectorDB(sessionId: number): VectorDBHookResult {
 
     // Reset state for invalid sessions
     if (sessionId <= 0) {
-      console.log(`useVectorDB: No valid session selected (ID: ${sessionId}), resetting state`);
+      log.debug(`No valid session selected (ID: ${sessionId})`);
       if (mountedRef.current) {
         setVectorDB(null);
         setLoading(false);
@@ -74,7 +82,6 @@ export function useVectorDB(sessionId: number): VectorDBHookResult {
     // Use cached instance if available
     const cachedInstance = vectorDBCache.get(sessionId);
     if (cachedInstance) {
-      console.log(`useVectorDB: Using cached instance for session ${sessionId}`);
       if (!vectorDB) setVectorDB(cachedInstance);
       if (!isInitialized) {
         setIsInitialized(true);
@@ -85,7 +92,6 @@ export function useVectorDB(sessionId: number): VectorDBHookResult {
 
     // Skip if already initialized
     if (lastSessionId.current === sessionId && vectorDB && isInitialized) {
-      console.log(`useVectorDB: Vector DB for session ${sessionId} already initialized (Provider: ${providerType})`);
       if (!initializedSessions.has(sessionId)) initializedSessions.add(sessionId);
       if (!vectorDBCache.has(sessionId)) vectorDBCache.set(sessionId, vectorDB);
       return;
@@ -93,13 +99,12 @@ export function useVectorDB(sessionId: number): VectorDBHookResult {
 
     // Skip if initialization is in progress
     if (initializationInProgress.current) {
-      console.log(`useVectorDB: Already initializing vector DB for session ${sessionId}`);
       return;
     }
 
     // Prevent excessive initialization attempts
     if (initAttempts.current > 3) {
-      console.error(`useVectorDB: Too many initialization attempts for session ${sessionId}`);
+      log.error(`Too many initialization attempts for session ${sessionId}`);
       if (mountedRef.current) {
         setError(new VectorDBError('Too many initialization attempts'));
         setLoading(false);
@@ -121,7 +126,7 @@ export function useVectorDB(sessionId: number): VectorDBHookResult {
       }
 
       try {
-        console.log(`useVectorDB: Initializing vector DB for session ${sessionId} (attempt ${initAttempts.current})`);
+        log.debug(`Initializing vector DB for session ${sessionId} (attempt ${initAttempts.current})`);
         const instance = await getVectorDBInstance(sessionId);
         const sessionMapping = await getSessionVectorDBMapping(sessionId);
         const provider = sessionMapping?.provider_name || 'chromadb';
@@ -138,7 +143,7 @@ export function useVectorDB(sessionId: number): VectorDBHookResult {
           initializedSessions.add(sessionId);
         }
       } catch (err) {
-        console.error(`useVectorDB: Initialization error for session ${sessionId}:`, err);
+        log.error(`Initialization failed for session ${sessionId}:`, err);
         if (mountedRef.current) {
           setError(err instanceof Error ? err : new VectorDBError(String(err)));
           setLoading(false);
@@ -158,7 +163,7 @@ export function useVectorDB(sessionId: number): VectorDBHookResult {
     }
 
     return () => {
-      console.log(`useVectorDB: Cleanup for session ${sessionId}`);
+      log.debug(`Cleanup for session ${sessionId}`);
     };
   }, [sessionId, isInitialized, vectorDB]);
 

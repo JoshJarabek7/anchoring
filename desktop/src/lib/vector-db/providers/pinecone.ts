@@ -1,3 +1,7 @@
+// NOTE TO LLMS THAT ARE READING THIS CODE:
+// IT IS 3072 DIMENSIONS, NOT 1536.
+
+
 import { 
   ContextType,
   DocumentFilter,
@@ -40,10 +44,24 @@ export interface PineconeConfig {
   openAIApiKey: string;
 }
 
-interface PineconeIndex {
-  upsert(params: { vectors: PineconeDocument[] }): Promise<void>;
-  query(params: { vector: number[], topK: number, includeMetadata: boolean, filter?: Record<string, any> }): Promise<{ matches?: Array<{ id: string, metadata: Record<string, any>, score: number }> }>;
-  fetch(params: { ids: string[], filter?: Record<string, any>, limit?: number }): Promise<{ vectors: Record<string, { metadata: Record<string, any> }> }>;
+interface PineconeSearchResult {
+  id: string;
+  metadata: {
+    category: DocumentCategory;
+    language?: string;
+    language_version?: string;
+    framework?: string;
+    framework_version?: string;
+    library?: string;
+    library_version?: string;
+    title: string;
+    description: string;
+    source_url: string;
+    concepts?: string;
+    content: string;
+    status?: string;
+  };
+  score?: number;
 }
 
 export class PineconeProvider implements VectorDBProvider {
@@ -75,7 +93,6 @@ export class PineconeProvider implements VectorDBProvider {
 class PineconeInstance implements VectorDBInstance {
   private config!: PineconeConfig;
   private initialized: boolean = false;
-  private index!: PineconeIndex;
   
   constructor(private sessionId: number) {}
   
@@ -176,22 +193,33 @@ class PineconeInstance implements VectorDBInstance {
   
   private _pineconeToPineconeDocument = (doc: any): UniversalDocument => {
     const metadata = doc.metadata || {};
+    
+    // Safely handle concepts - ensure it's a string before trying to split
+    let concepts: string[] = [];
+    if (metadata.concepts) {
+      if (typeof metadata.concepts === 'string') {
+        concepts = metadata.concepts.split(',');
+      } else if (Array.isArray(metadata.concepts)) {
+        concepts = metadata.concepts;
+      }
+    }
+    
     return {
       id: doc.id,
       content: metadata.content || "",
       metadata: {
         category: metadata.category,
-        language: metadata.language,
-        language_version: metadata.language_version,
-        framework: metadata.framework,
-        framework_version: metadata.framework_version,
-        library: metadata.library,
-        library_version: metadata.library_version,
+        language: metadata.language || null,
+        language_version: metadata.language_version || null,
+        framework: metadata.framework || null,
+        framework_version: metadata.framework_version || null,
+        library: metadata.library || null,
+        library_version: metadata.library_version || null,
         title: metadata.title || "Untitled",
         description: metadata.description || "",
-        source_url: metadata.source_url,
-        concepts: metadata.concepts ? metadata.concepts.split(",") : [],
-        status: metadata.status
+        source_url: metadata.source_url || "",
+        concepts: concepts,
+        status: metadata.status || null
       }
     };
   };
@@ -209,9 +237,10 @@ class PineconeInstance implements VectorDBInstance {
       const validDocs = processedDocs.filter((doc): doc is NonNullable<typeof doc> => doc !== null);
       
       if (validDocs.length > 0) {
-        // Pinecone upsert expects an array of vectors
-        await this.index.upsert({
-          vectors: validDocs
+        // Use add_documents command
+        await invoke('add_documents', {
+          sessionId: this.sessionId,
+          documents: validDocs
         });
         
         console.log(`Successfully added ${validDocs.length} documents to Pinecone`);
@@ -233,7 +262,7 @@ class PineconeInstance implements VectorDBInstance {
       
       // Generate embedding for query if it's a string
       const vector = typeof query === 'string' 
-        ? await generateEmbedding(query, this.config.apiKey)
+        ? await generateEmbedding(query, this.config.openAIApiKey)
         : query;
       
       // Prepare filter if specified
@@ -243,32 +272,27 @@ class PineconeInstance implements VectorDBInstance {
           .filter(([_, value]) => value !== undefined && value !== "");
         
         if (validFilters.length > 0) {
-          // Convert filters to Pinecone metadata format
           filter = validFilters.reduce((acc, [key, value]) => {
-            // Map top-level filters to metadata fields
-            const metadataKey = key === 'source_url' ? 'source_url' : key;
-            acc[metadataKey] = { $eq: value };
+            acc[key] = { $eq: value };
             return acc;
           }, {} as Record<string, any>);
         }
       }
       
-      console.log('Pinecone search filter:', filter);
-      
-      // Query Pinecone
-      const results = await this.index.query({
-        vector,
-        topK: Math.min(limit, 10),
-        includeMetadata: true,
-        ...(filter ? { filter } : {})
+      // Use search_documents command
+      const results = await invoke<Array<{id: string, metadata: Record<string, any>, score: number}>>('search_documents', {
+        sessionId: this.sessionId,
+        embedding: vector,
+        filter,
+        limit: Math.min(limit, 10)
       });
       
       // Convert results to UniversalDocument format
-      if (!results.matches?.length) {
+      if (!results?.length) {
         return [];
       }
       
-      return results.matches.map(match => {
+      return results.map(match => {
         const doc = {
           id: match.id,
           metadata: match.metadata,
@@ -277,7 +301,6 @@ class PineconeInstance implements VectorDBInstance {
         return this._pineconeToPineconeDocument(doc);
       });
     } catch (error) {
-      console.error('Failed to search documents in Pinecone:', error);
       throw new VectorDBError('Failed to search documents in Pinecone', error as Error);
     }
   }
@@ -297,40 +320,29 @@ class PineconeInstance implements VectorDBInstance {
           .filter(([_, value]) => value !== undefined && value !== "");
         
         if (validFilters.length > 0) {
-          // Convert filters to Pinecone metadata format
           filter = validFilters.reduce((acc, [key, value]) => {
-            // Map top-level filters to metadata fields
-            const metadataKey = key === 'source_url' ? 'source_url' : key;
-            acc[metadataKey] = { $eq: value };
+            acc[key] = { $eq: value };
             return acc;
           }, {} as Record<string, any>);
         }
       }
-      
-      console.log('Pinecone filter:', filter);
-      
-      // Query Pinecone
-      const results = await this.index.fetch({
-        ids: [], // Empty array to fetch all vectors
-        ...(filter ? { filter } : {}),
+      console.log(filter);
+      // Query Pinecone with proper typing
+      const results = await invoke<PineconeSearchResult[]>('fetch_documents', {
+        sessionId: this.sessionId,
+        filter,
         limit: Math.min(limit, 100)
       });
-      
-      if (!Object.keys(results.vectors).length) {
+      console.log(results);
+      if (!Array.isArray(results) || results.length === 0) {
         console.log('No documents found matching filters');
         return [];
       }
       
       // Convert results to UniversalDocument format
-      return Object.entries(results.vectors).map(([id, vector]) => {
-        const doc = {
-          id,
-          metadata: vector.metadata
-        };
-        return this._pineconeToPineconeDocument(doc);
-      });
+      return results.map(doc => this._pineconeToPineconeDocument(doc));
     } catch (error) {
-      console.error('Failed to get documents by filters from Pinecone:', error);
+      console.error(error);
       throw new VectorDBError('Failed to get documents by filters from Pinecone', error as Error);
     }
   }
