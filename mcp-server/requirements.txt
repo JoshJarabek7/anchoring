@@ -7,4 +7,3 @@ numpy
 python-dotenv
 semantic-text-splitter
 pinecone
-pinecone-client

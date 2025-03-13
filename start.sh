@@ -75,8 +75,6 @@ if ! container_running "chroma-server"; then
   docker-compose up -d --remove-orphans
   cd "${SCRIPT_DIR}"
   echo "ChromaDB container started."
-  echo "Waiting for ChromaDB to be ready..."
-  sleep 1 # Wait for container to start
 else
   echo "ChromaDB container is already running."
 fi
@@ -115,13 +113,20 @@ EOF
   read -r
 fi
 
-# Install MCP server with uv run
-echo "Setting up MCP server with Claude..."
-# Run setup_collection.py with uv run (commented out)
-# uv run --python ">=3.10,<3.13" --with chromadb --with mcp[cli] --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken python3 "${MCP_SERVER_DIR}/app/setup_collection.py"
+# Create logs directory if it doesn't exist
+mkdir -p "${PROJECT_ROOT}/logs"
 
-# Install MCP server
-uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "${MCP_SERVER_DIR}/app/server.py"
+# Install MCP server with logging
+echo "Setting up MCP server with Claude..."
+LOG_FILE="${PROJECT_ROOT}/logs/mcp_server.log"
+echo "MCP server logs will be written to: ${LOG_FILE}"
+
+# Run MCP server with output redirection
+cd "${MCP_SERVER_DIR}"
+uv run --python ">=3.10,<3.13" --with chromadb --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken --with pinecone python -m app.server > "${LOG_FILE}" 2>&1 &
+
+# Give the MCP server a moment to start
+sleep 2
 
 # Install desktop dependencies if needed
 echo "Installing desktop dependencies..."

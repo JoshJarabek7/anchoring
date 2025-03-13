@@ -316,3 +316,6 @@ sketch
 
 # Personal
 plans/
+
+# Cursor config with sensitive data
+.cursor/mcp.json

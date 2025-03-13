@@ -1,39 +1,93 @@
 """Pinecone implementation of the VectorDBProvider interface."""
 from __future__ import annotations
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict, Union, Literal
+from enum import Enum
 import pinecone
+import os
+from dotenv import load_dotenv
 
-from . import VectorDBProvider, DBConnectionConfig, DocumentSnippet, ContextType
+from . import VectorDBProvider, DocumentSnippet, ContextType
 
 logger = logging.getLogger(__name__)
 
-class PineconeProvider(VectorDBProvider):
-    """Pinecone implementation of the VectorDBProvider interface."""
+class DocumentCategory(str, Enum):
+    """Document categories matching TypeScript implementation."""
+    DOCUMENTATION = "documentation"
+    CODE = "code"
+    CONVERSATION = "conversation"
+    GENERAL = "general"
+
+class DocumentMetadata(TypedDict, total=False):
+    """Document metadata matching TypeScript implementation."""
+    category: DocumentCategory
+    language: Optional[str]
+    language_version: Optional[str]
+    framework: Optional[str]
+    framework_version: Optional[str]
+    library: Optional[str]
+    library_version: Optional[str]
+    title: str
+    description: str
+    source_url: str
+    concepts: List[str]
+    status: Optional[str]
+
+class UniversalDocument(TypedDict):
+    """Universal document format matching TypeScript implementation."""
+    id: str
+    content: str
+    metadata: DocumentMetadata
+
+class PineconeDocument(TypedDict):
+    """Pinecone specific document format."""
+    id: str
+    values: List[float]
+    metadata: Dict[str, Any]  # Pinecone allows arbitrary metadata
+
+class PineconeConfig(TypedDict):
+    """Pinecone configuration matching TypeScript implementation."""
+    api_key: str
+    index_name: str
+    environment: str
+
+class PineconeSearchResult(TypedDict):
+    """Pinecone search result format."""
+    id: str
+    metadata: DocumentMetadata
+    score: Optional[float]
+
+DocumentFilter = Dict[str, Any]  # Matches TypeScript DocumentFilter type
+
+class PineconeProvider:
+    """Pinecone implementation for vector database operations."""
     
     def __init__(self):
         """Initialize Pinecone provider."""
-        self.index = None
-        self.namespace = None
+        self.index: Optional[Any] = None
+        self.namespace: Optional[str] = None
         
-    async def initialize(self, config: DBConnectionConfig) -> None:
-        """Initialize connection to Pinecone."""
-        if config.type != "pinecone":
-            raise ValueError(f"Invalid config type {config.type} for PineconeProvider")
-            
-        if not config.api_key or not config.environment or not config.index_name:
-            raise ValueError("Pinecone requires api_key, environment, and index_name configuration")
+    async def initialize(self) -> None:
+        """Initialize connection to Pinecone using environment variables."""
+        load_dotenv()  # Load environment variables from .env file
+        
+        api_key = os.getenv('PINECONE_API_KEY')
+        environment = os.getenv('PINECONE_ENVIRONMENT')
+        index_name = os.getenv('PINECONE_INDEX_NAME')
+        
+        if not api_key or not environment or not index_name:
+            raise ValueError("Missing required environment variables: PINECONE_API_KEY, PINECONE_ENVIRONMENT, PINECONE_INDEX_NAME")
             
         try:
             # Initialize Pinecone
             pinecone.init(
-                api_key=config.api_key,
-                environment=config.environment
+                api_key=api_key,
+                environment=environment
             )
             
             # Get or create the index
-            self.index = pinecone.Index(config.index_name)
-            logger.info(f"Initialized Pinecone index '{config.index_name}'")
+            self.index = pinecone.Index(index_name)
+            logger.info(f"Initialized Pinecone index '{index_name}'")
         except Exception as e:
             logger.error(f"Failed to initialize Pinecone: {str(e)}")
             raise
@@ -52,24 +106,21 @@ class PineconeProvider(VectorDBProvider):
             logger.error(f"Failed to set namespace: {str(e)}")
             raise
             
-    async def add_documents(self, documents: List[DocumentSnippet]) -> None:
+    async def add_documents(self, documents: List[UniversalDocument]) -> None:
         """Add documents to the current namespace."""
         if not self.index or not self.namespace:
             raise RuntimeError("No index or namespace selected")
             
         try:
             # Convert documents to Pinecone format
-            vectors = []
+            vectors: List[PineconeDocument] = []
             for doc in documents:
-                if not doc.embedding:
-                    raise ValueError(f"Document {doc.id} missing embedding")
-                    
-                vector = {
-                    'id': doc.id,
-                    'values': doc.embedding,
+                vector: PineconeDocument = {
+                    'id': doc['id'],
+                    'values': [],  # Should be provided by caller
                     'metadata': {
-                        'content': doc.content,
-                        **doc.metadata
+                        'content': doc['content'],
+                        **doc['metadata']
                     }
                 }
                 vectors.append(vector)
@@ -91,9 +142,9 @@ class PineconeProvider(VectorDBProvider):
     async def search_documents(
         self,
         query_embedding: List[float],
-        filter_dict: Optional[Dict[str, Any]] = None,
+        filter_dict: Optional[DocumentFilter] = None,
         limit: int = 5
-    ) -> List[DocumentSnippet]:
+    ) -> List[UniversalDocument]:
         """Search for documents using the query embedding and optional filters."""
         if not self.index or not self.namespace:
             raise RuntimeError("No index or namespace selected")
@@ -108,15 +159,15 @@ class PineconeProvider(VectorDBProvider):
                 include_metadata=True
             )
             
-            # Convert Pinecone results to DocumentSnippets
-            documents = []
+            # Convert Pinecone results to UniversalDocuments
+            documents: List[UniversalDocument] = []
             for match in results.matches:
-                doc = DocumentSnippet(
-                    id=match.id,
-                    content=match.metadata.pop('content'),
-                    metadata=match.metadata,
-                    embedding=match.values if hasattr(match, 'values') else None
-                )
+                content = match.metadata.pop('content')
+                doc: UniversalDocument = {
+                    'id': match.id,
+                    'content': content,
+                    'metadata': match.metadata
+                }
                 documents.append(doc)
                 
             return documents
@@ -128,6 +179,6 @@ class PineconeProvider(VectorDBProvider):
         """Check if the database is available for use."""
         return self.index is not None and self.namespace is not None
 
-    async def get_context_type(self) -> ContextType:
+    async def get_context_type(self) -> Literal["local", "shared"]:
         """Get the current context type."""
-        return ContextType.SHARED 
+        return "shared" 
