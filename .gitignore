@@ -313,3 +313,9 @@ sketch
 !mcp-server/MCP_README.md
 .chroma/*
 *.code-workspace
+
+# Personal
+plans/
+
+# Cursor config with sensitive data
+.cursor/mcp.json

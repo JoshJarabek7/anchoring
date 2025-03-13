@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator
 from enum import Enum
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import json
 
 import numpy as np
 from chromadb import AsyncHttpClient
@@ -23,8 +24,13 @@ from semantic_text_splitter import TextSplitter
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP, Context
 
+from .vector_db import DocumentSnippet, DBConnectionConfig, ContextType
+from .vector_db.chroma_provider import ChromaDBProvider
+from .vector_db.pinecone_provider import PineconeProvider
+
 # Load environment variables
 load_dotenv()
+logger = None
 
 #------------------------------------------------------------------------------
 # Configuration
@@ -36,9 +42,16 @@ class Config:
     # Server settings
     CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
     CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8001"))
+    MCP_PORT = int(os.environ.get("MCP_PORT", "8080"))
 
     # OpenAI settings
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+    # Context settings
+    CONTEXT_SOURCE = os.environ.get("CONTEXT_SOURCE", "local")
+    if CONTEXT_SOURCE not in ["local", "shared"]:
+        print(f"Invalid CONTEXT_SOURCE '{CONTEXT_SOURCE}', defaulting to 'local'")
+        CONTEXT_SOURCE = "local"
 
     # Embedding model settings
     EMBEDDING_MODEL = "text-embedding-3-large"
@@ -52,12 +65,14 @@ class Config:
         "chromadb",
         "tiktoken",
         "numpy",
-        "semantic-text-splitter"
+        "semantic-text-splitter",
+        "pinecone"
     ]
 
     @classmethod
     def setup_logging(cls, level: str = "DEBUG") -> logging.Logger:
         """Set up and configure logging."""
+        global logger
         numeric_level = getattr(logging, level.upper(), logging.INFO)
 
         # Clear any existing handlers
@@ -66,15 +81,40 @@ class Config:
             for handler in root.handlers:
                 root.removeHandler(handler)
         
-        # Configure logging
-        logging.basicConfig(
-            level=numeric_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            stream=sys.stderr
+        # Create formatters
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
         )
+        
+        # Ensure logs directory exists
+        os.makedirs('logs', exist_ok=True)
+        
+        # Set up file handler with relative path
+        file_handler = logging.FileHandler('./logs/mcp_server.log')
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(numeric_level)
+        
+        # Set up console handler
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(numeric_level)
+        
+        # Configure root logger
+        root.setLevel(numeric_level)
+        root.addHandler(file_handler)
+        root.addHandler(console_handler)
 
-        return logging.getLogger("docs-server")
-    
+        logger = logging.getLogger("docs-server")
+        logger.info("=== MCP Documentation Server Starting ===")
+        logger.info(f"Environment Configuration:")
+        logger.info(f"  CHROMADB_HOST: {cls.CHROMADB_HOST}")
+        logger.info(f"  CHROMADB_PORT: {cls.CHROMADB_PORT}")
+        logger.info(f"  MCP_PORT: {cls.MCP_PORT}")
+        logger.info(f"  CONTEXT_SOURCE: {cls.CONTEXT_SOURCE}")
+        logger.info(f"  OPENAI_API_KEY: {'Set' if cls.OPENAI_API_KEY else 'Not Set'}")
+        logger.info(f"  EMBEDDING_MODEL: {cls.EMBEDDING_MODEL}")
+        
+        return logger
 
 # Initialize logger
 logger = Config.setup_logging()
@@ -172,62 +212,71 @@ class EmbeddingService:
 #------------------------------------------------------------------------------
 
 class DatabaseService:
-    """Service for managing and querying the ChromaDB database."""
-
+    """Service for managing vector database operations."""
+    
     def __init__(self, embedding_service: EmbeddingService):
-        """Initialize the database service."""
+        """Initialize database service."""
+        logger.info("Creating DatabaseService instance")
         self.embedding_service = embedding_service
-        self.client = None
-        self.collection = None
-
-    async def initialize_database(self):
-        """Initialize the ChromaDB client and collection."""
-        try:
-            logger.info(f"Initializing ChromaDB client at {Config.CHROMADB_HOST}:{Config.CHROMADB_PORT}")
-
-            self.client = await AsyncHttpClient(
-                host=Config.CHROMADB_HOST,
-                port=Config.CHROMADB_PORT
-            )
+        self.provider = None
+        self.context_type = Config.CONTEXT_SOURCE
+        logger.info(f"Initial context type set to: {self.context_type}")
             
-            logger.info("Creating documentation_snippets collection with maximum accuracy settings")
-            # Create collection without an embedding function, we'll handle embeddings ourselves
-            self.collection = await self.client.get_or_create_collection(
+    async def initialize_database(self):
+        """Initialize the database connection."""
+        logger.info("Initializing database connection")
+        try:
+            # Initialize the appropriate provider based on context type
+            if self.context_type == "local":
+                self.provider = ChromaDBProvider()
+            else:
+                self.provider = PineconeProvider()
+                
+            # Initialize the provider
+            await self.provider.initialize()
+            
+            # Create or get the collection
+            await self.provider.get_or_create_collection(
                 name="documentation_snippets",
                 metadata={
-                    "hnsw:space": "cosine",           # Cosine distance for text embeddings
-                    "hnsw:construction_ef": 1000,     # Extremely high for maximum index quality (default: 100)
-                    "hnsw:M": 128,                    # Very high connectivity (default: 16)
-                    "hnsw:search_ef": 500,            # Exhaustive search exploration (default: 10)
-                    "hnsw:num_threads": 16,           # High parallelism for construction
-                    "hnsw:resize_factor": 1.2,        # Standard resize factor
-                    "hnsw:batch_size": 500,           # Larger batch size for better indexing
-                    "hnsw:sync_threshold": 2000       # Higher threshold for fewer disk syncs
+                    "description": "Documentation snippets for various languages, frameworks, and libraries"
                 }
             )
-            logger.info("ChromaDB collection initialized successfully with maximum accuracy settings")
-
+            
+            logger.info("Database initialization completed successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize ChromaDB: {str(e)}\n{traceback.format_exc()}")
-
+            logger.error(f"Failed to initialize database: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+            
     def is_available(self) -> bool:
-        """Check if the database is available for use."""
-        return self.collection is not None
-    
+        """Check if the database is available."""
+        return self.provider is not None and self.provider.is_available()
+            
     def get_unavailable_message(self) -> str:
-        """Get a standardized message when the database is unavailable."""
-        return f"""
-        # ChromaDB Not Available
+        """Get a message explaining why the database is unavailable."""
+        if self.provider is None:
+            return "Database provider not initialized"
+        return "Database is not available"
 
-        The documentation search tool is currently unavailable because the ChromaDB collection couldn't be initialized.
-
-        ## Possible Solutions
-        1. Make sure ChromaDB is running on {Config.CHROMADB_HOST}:{Config.CHROMADB_PORT}
-        2. Try reinstalling ChromaDB dependencies: `pip install chromadb --force-reinstall`
-        3. Check logs for specific error details
-
-        Until this issue is resolved, documentation search capabilities will be limited.
-        """
+    async def switch_context(self, context_type: str) -> str:
+        """Switch between local and shared contexts."""
+        if context_type not in ["local", "shared"]:
+            raise ValueError("Invalid context type. Must be 'local' or 'shared'")
+            
+        if context_type == self.context_type:
+            return f"Already using {context_type} context"
+            
+        logger.info(f"Switching context from {self.context_type} to {context_type}")
+        self.context_type = context_type
+        
+        # Re-initialize with new context
+        await self.initialize_database()
+        return f"Switched to {context_type} context"
+            
+    def get_current_context(self) -> str:
+        """Get the current context type."""
+        return self.context_type
 
 #------------------------------------------------------------------------------
 # Documentation Service
@@ -241,7 +290,7 @@ class DocumentationService:
         self.db_service = db_service
     
     def _build_search_filters(self, request: DocumentationQueryRequest) -> dict[str, Any]:
-        """Build ChromaDB search filters based on the request."""
+        """Build vector database search filters based on the request."""
         where_conditions = []
         
         # Base filter for the requested documentation category
@@ -349,7 +398,7 @@ class DocumentationService:
         else:
             where_filter = {}
         
-        # Handle multiple fields in filter appropriately for ChromaDB
+        # Handle multiple fields in filter appropriately for vector database
         if not any(k.startswith('$') for k in where_filter.keys()) and len(where_filter) > 1:
             restructured_filter = {"$and": []}
             for key, value in where_filter.items():
@@ -361,7 +410,7 @@ class DocumentationService:
     async def query_documentation(self, request: DocumentationQueryRequest) -> Any:
         """Query documentation snippets based on the provided request."""
         if not self.db_service.is_available():
-            logger.error("ChromaDB collection is not available")
+            logger.error("Vector database collection is not available")
             return None
         
         logger.info(f"Processing query: {request.query}")
@@ -380,14 +429,14 @@ class DocumentationService:
             logger.info("Generating query embeddings")
             query_embedding = await self.db_service.embedding_service.embed_text(query_text)
             
-            # Execute the query against ChromaDB
-            logger.info("Executing ChromaDB query")
-            collection = self.db_service.collection
+            # Execute the query against vector database
+            logger.info("Executing vector database query")
+            collection = self.db_service.provider.collection
             if collection is None:
                 logger.error("Collection is None, cannot execute query")
                 return None
             
-            # Query using the pre-generated embeddings instead of letting ChromaDB generate them
+            # Query using the pre-generated embeddings instead of letting vector database generate them
             results = await collection.query(
                 query_embeddings=[query_embedding],  # Pass our pre-generated embeddings
                 n_results=request.n_results,
@@ -401,7 +450,7 @@ class DocumentationService:
             return None
     
     def format_results(self, results: dict[str, Any]) -> str:
-        """Format ChromaDB results into a readable markdown format."""
+        """Format vector database results into a readable markdown format."""
         if not results or not results.get('documents') or not results['documents'][0]:
             return "No documentation snippets found matching your query."
         
@@ -455,7 +504,7 @@ class DocumentationService:
     async def list_components(self, category: str) -> list[dict[str, str]]:
         """List all available components for a given category."""
         if not self.db_service.is_available():
-            logger.error("ChromaDB collection is not available")
+            logger.error("Vector database collection is not available")
             return []
         
         if category not in ["language", "framework", "library"]:
@@ -466,7 +515,7 @@ class DocumentationService:
         
         try:
             # Retrieve all documents with matching category
-            collection = self.db_service.collection
+            collection = self.db_service.provider.collection
             if collection is None:
                 logger.error("Collection is None, cannot list components")
                 return []
@@ -536,53 +585,41 @@ class AppContext:
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
-    """
-    Manage application lifecycle with proper startup/shutdown handling.
+    """Initialize application services and handle cleanup."""
+    logger.info("Initializing application services...")
     
-    This ensures that all services are properly initialized before the server
-    starts accepting requests, and that they are properly cleaned up when
-    the server shuts down.
-    """
     try:
-        logger.info("Starting Documentation Snippets server initialization")
-        
-        # Set up service stack in the correct order
+        # Initialize services
+        logger.info("Initializing EmbeddingService...")
         embedding_service = EmbeddingService()
-        logger.info("Embedding service initialized")
         
+        logger.info("Initializing DatabaseService...")
         db_service = DatabaseService(embedding_service)
-        logger.info("Database service created")
-        
-        # Important: actually initialize the database connection
-        # before yielding control back to the server
-        logger.info("Initializing database connection...")
         await db_service.initialize_database()
-        logger.info("Database connection initialized")
         
+        logger.info("Initializing DocumentationService...")
         docs_service = DocumentationService(db_service)
-        logger.info("Documentation service initialized")
         
+        logger.info("Initializing DocumentationEndpoints...")
         endpoints = DocumentationEndpoints(docs_service)
-        logger.info("API endpoints initialized")
         
-        # Return initialized context to the server
-        yield AppContext(
+        logger.info("All services initialized successfully")
+        context = AppContext(
             db_service=db_service,
             docs_service=docs_service,
             endpoints=endpoints
         )
-        logger.info("Server is up and running with all services initialized")
+        yield context
         
+        # Keep the server running until explicitly stopped
+        while True:
+            await asyncio.sleep(1)
     except Exception as e:
-        error_trace = traceback.format_exc()
-        logger.error(f"Error during server initialization: {str(e)}\n{error_trace}")
-        # Re-raise the exception to prevent the server from starting
-        # if initialization failed
+        logger.error(f"Failed to initialize services: {str(e)}")
+        logger.error(traceback.format_exc())
         raise
     finally:
-        # Shutdown notification
-        logger.info("Shutting down Documentation Snippets server...")
-        logger.info("Server shutdown complete")
+        logger.info("Cleaning up application services...")
 
 #------------------------------------------------------------------------------
 # MCP Endpoints
@@ -606,36 +643,26 @@ class DocumentationEndpoints:
         n_results: int = 15,
         ctx: Context | None = None
     ) -> str:
-        """
-        Search for documentation snippets across multiple languages, frameworks, and libraries.
-
-        This tool allows you to find relevant documentation when working with multiple technologies simultaneously.
-        For example, you might need to see how to use a specific-version of a Python library with a specific web framework, or how different libraries versions interact.
-        You will be able to generate version-specific syntax accurate code using this tool.
-
-        Args:
-            query: The search query describing what you're looking for
-            category: The category to search in ("language", "framework", "library")
-            code_context: Optional code snippets to improve search relevance
-            languages: List of languages with their versions to search for
-            frameworks: List of frameworks with their versions to search for
-            libraries: List of libraries with their versions to search for
-            n_results: Number of results to return
-            ctx: The MCP context object
-
-        Returns:
-            Formatted documentation snippets with clear source attribution
-        """
+        """Query documentation snippets."""
+        logger.info(f"Received documentation query: {query}")
+        logger.info(f"Category: {category}, Results requested: {n_results}")
+        logger.debug(f"Languages: {languages}")
+        logger.debug(f"Frameworks: {frameworks}")
+        logger.debug(f"Libraries: {libraries}")
+        logger.debug(f"Code context: {code_context}")
+        
         try:
-            # Check if we need to initialize the database connection
-            if self.docs_service.db_service.client is None:
-                logger.info("Database connection not initialized, initializing now")
-                await self.docs_service.db_service.initialize_database()
-                
-            # Check database availability
-            if not self.docs_service.db_service.is_available():
-                return self.docs_service.db_service.get_unavailable_message()
-            
+            # Initialize services if context is None
+            if ctx is None or not hasattr(ctx, 'state') or not hasattr(ctx.state, 'app_context'):
+                logger.info("Context not available, initializing services directly")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                await db_service.initialize_database()
+                docs_service = DocumentationService(db_service)
+            else:
+                app_ctx: AppContext = ctx.state.app_context
+                docs_service = app_ctx.docs_service
+
             # Convert input dictionaries to TechComponent objects
             tech_languages = None
             if languages:
@@ -665,69 +692,32 @@ class DocumentationEndpoints:
             )
             
             # Query the documentation
-            results = await self.docs_service.query_documentation(request)
+            results = await docs_service.query_documentation(request)
             
             # Format the results
             if results:
-                return self.docs_service.format_results(results)
+                return docs_service.format_results(results)
             else:
-                return "Error executing query: ChromaDB returned no results"
+                return "Error executing query: Vector database returned no results"
         except Exception as e:
-            error_trace = traceback.format_exc()
-            logger.error(f"Error in query_documentation: {str(e)}\n{error_trace}")
+            logger.error(f"Error processing query: {str(e)}")
+            logger.error(traceback.format_exc())
             return f"Error executing query: {str(e)}"
-    
-    async def list_documentation_components(self, category: str) -> str:
-        """
-        Retrieve all available documentation components for a category.
-        
-        The category should be one of "language", "framework", or "library".
-        
-        Args:
-            category: The category to list components for
-            
-        Returns:
-            Formatted list of available components
-        """
-        try:
-            # Check if we need to initialize the database connection
-            if self.docs_service.db_service.client is None:
-                logger.info("Database connection not initialized, initializing now")
-                await self.docs_service.db_service.initialize_database()
-                
-            # Check database availability
-            if not self.docs_service.db_service.is_available():
-                return self.docs_service.db_service.get_unavailable_message()
-            
-            # Check if the category is valid
-            if category not in ["language", "framework", "library"]:
-                return "Invalid category. Must be one of: language, framework, library."
-            
-            # List the components
-            items = await self.docs_service.list_components(category)
-            
-            # Format the results
-            return self.docs_service.format_components_list(items, category)
-        except Exception as e:
-            error_trace = traceback.format_exc()
-            logger.error(f"Error in list_documentation_components: {str(e)}\n{error_trace}")
-            return f"Error listing components: {str(e)}"
-
-#------------------------------------------------------------------------------
-# MCP Server Creation
-#------------------------------------------------------------------------------
 
 def create_mcp_server() -> FastMCP:
-    """Create and initialize the MCP server with proper lifecycle."""
-    
-    # Create MCP server with lifespan management
+    """Create and configure the MCP server."""
+    logger.info("Creating MCP server...")
     mcp = FastMCP(
-        "Version-Pinned Documentation Snippets", 
+        name="Documentation Snippets",
+        description="Provides version-pinned documentation snippets for languages, frameworks, and libraries",
         dependencies=Config.DEPENDENCIES,
         lifespan=app_lifespan
     )
+    logger.info(f"MCP server created with name: {mcp.name}")
     
-    # Register tools using the lifespan context
+    # Register tools
+    logger.info("Registering MCP tools...")
+    
     @mcp.tool(name="query-documentation-snippets")
     async def query_documentation(
         query: str,
@@ -739,101 +729,102 @@ def create_mcp_server() -> FastMCP:
         n_results: int = 15,
         ctx: Context | None = None
     ) -> str:
-        """Search for documentation snippets with proper context access."""
-        try:
-            # Fallback for when context is not available
-            if ctx is None or not hasattr(ctx, 'request_context') or ctx.request_context is None:
-                logger.warning("Context is not fully available, using fallback")
-                # Create documentation service directly
-                embedding_service = EmbeddingService()
-                db_service = DatabaseService(embedding_service)
-                docs_service = DocumentationService(db_service)
-                endpoints = DocumentationEndpoints(docs_service)
-                
-                # Call the endpoint method directly
-                return await endpoints.query_documentation(
-                    query, category, code_context, languages, 
-                    frameworks, libraries, n_results, ctx
-                )
-            
-            # Access the endpoints from the lifespan context when available
-            app_ctx = ctx.request_context.lifespan_context
-            if not isinstance(app_ctx, AppContext):
-                logger.warning(f"Invalid context type: {type(app_ctx)}, using fallback")
-                # Create documentation service directly
-                embedding_service = EmbeddingService()
-                db_service = DatabaseService(embedding_service)
-                docs_service = DocumentationService(db_service)
-                endpoints = DocumentationEndpoints(docs_service)
-                
-                # Call the endpoint method directly
-                return await endpoints.query_documentation(
-                    query, category, code_context, languages, 
-                    frameworks, libraries, n_results, ctx
-                )
-                
-            # Call the endpoint method using context
-            return await app_ctx.endpoints.query_documentation(
-                query, category, code_context, languages, 
-                frameworks, libraries, n_results, ctx
+        """Search for documentation snippets."""
+        if ctx is None or not hasattr(ctx, 'state') or not hasattr(ctx.state, 'app_context'):
+            logger.info("Context not available, initializing services directly")
+            embedding_service = EmbeddingService()
+            db_service = DatabaseService(embedding_service)
+            await db_service.initialize_database()
+            docs_service = DocumentationService(db_service)
+            return await docs_service.query_documentation(
+                query=query,
+                category=category,
+                code_context=code_context,
+                languages=languages,
+                frameworks=frameworks,
+                libraries=libraries,
+                n_results=n_results,
+                ctx=ctx
             )
-        except Exception as e:
-            error_trace = traceback.format_exc()
-            logger.error(f"Error in query_documentation tool: {str(e)}\n{error_trace}")
-            return f"Error executing query: {str(e)}"
+        else:
+            app_ctx: AppContext = ctx.state.app_context
+            return await app_ctx.endpoints.query_documentation(
+                query=query,
+                category=category,
+                code_context=code_context,
+                languages=languages,
+                frameworks=frameworks,
+                libraries=libraries,
+                n_results=n_results,
+                ctx=ctx
+            )
     
-    @mcp.tool(name="list-documentation-components")
-    async def list_components(category: str, ctx: Context | None = None) -> str:
-        """List documentation components with proper context access."""
+    @mcp.tool(name="show-context-source")
+    async def show_context(ctx: Context | None = None) -> str:
+        logger.info("Showing current context source")
         try:
-            # Fallback for when context is not available
-            if ctx is None or not hasattr(ctx, 'request_context') or ctx.request_context is None:
-                logger.warning("Context is not fully available, using fallback")
-                # Create documentation service directly
+            if ctx is None or not hasattr(ctx, 'state') or not hasattr(ctx.state, 'app_context'):
+                logger.info("Context not available, initializing services directly")
                 embedding_service = EmbeddingService()
                 db_service = DatabaseService(embedding_service)
-                docs_service = DocumentationService(db_service)
-                endpoints = DocumentationEndpoints(docs_service)
-                
-                # Call the endpoint method directly
-                return await endpoints.list_documentation_components(category)
-            
-            # Access the endpoints from the lifespan context when available
-            app_ctx = ctx.request_context.lifespan_context
-            if not isinstance(app_ctx, AppContext):
-                logger.warning(f"Invalid context type: {type(app_ctx)}, using fallback")
-                # Create documentation service directly
-                embedding_service = EmbeddingService()
-                db_service = DatabaseService(embedding_service)
-                docs_service = DocumentationService(db_service)
-                endpoints = DocumentationEndpoints(docs_service)
-                
-                # Call the endpoint method directly
-                return await endpoints.list_documentation_components(category)
-                
-            # Call the endpoint method using context
-            return await app_ctx.endpoints.list_documentation_components(category)
+                await db_service.initialize_database()
+                return f"Current context: {db_service.get_current_context()}"
+            else:
+                app_ctx: AppContext = ctx.state.app_context
+                return f"Current context: {app_ctx.db_service.get_current_context()}"
         except Exception as e:
-            error_trace = traceback.format_exc()
-            logger.error(f"Error in list_components tool: {str(e)}\n{error_trace}")
-            return f"Error listing components: {str(e)}"
-    
-    logger.info("MCP server initialized with proper lifecycle management")
+            logger.error(f"Error showing context: {str(e)}")
+            logger.error(traceback.format_exc())
+            return f"Error showing context: {str(e)}"
+
+    @mcp.tool(name="use-local-context")
+    async def use_local_context(ctx: Context | None = None) -> str:
+        logger.info("Switching to local context")
+        try:
+            if ctx is None or not hasattr(ctx, 'state') or not hasattr(ctx.state, 'app_context'):
+                logger.info("Context not available, initializing services directly")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                await db_service.initialize_database()
+                return await db_service.switch_context("local")
+            else:
+                app_ctx: AppContext = ctx.state.app_context
+                return await app_ctx.db_service.switch_context("local")
+        except Exception as e:
+            logger.error(f"Error switching to local context: {str(e)}")
+            logger.error(traceback.format_exc())
+            return f"Error switching context: {str(e)}"
+
+    @mcp.tool(name="use-shared-context")
+    async def use_shared_context(ctx: Context | None = None) -> str:
+        logger.info("Switching to shared context")
+        try:
+            if ctx is None or not hasattr(ctx, 'state') or not hasattr(ctx.state, 'app_context'):
+                logger.info("Context not available, initializing services directly")
+                embedding_service = EmbeddingService()
+                db_service = DatabaseService(embedding_service)
+                await db_service.initialize_database()
+                return await db_service.switch_context("shared")
+            else:
+                app_ctx: AppContext = ctx.state.app_context
+                return await app_ctx.db_service.switch_context("shared")
+        except Exception as e:
+            logger.error(f"Error switching to shared context: {str(e)}")
+            logger.error(traceback.format_exc())
+            return f"Error switching context: {str(e)}"
+
+    logger.info("All MCP tools registered")
     return mcp
 
 # Create a server instance for MCP CLI to find
 server = create_mcp_server()
-
-#------------------------------------------------------------------------------
-# Main Entry Point
-#------------------------------------------------------------------------------
 
 async def main():
     """Main entry point for the application."""
     try:
         # Create and run MCP server
         mcp = create_mcp_server()
-        await mcp.run_stdio_async()
+        await mcp.run_sse_async()  # Port is configured through environment variables
     except Exception as e:
         logger.error(f"Fatal error in main: {str(e)}\n{traceback.format_exc()}")
         sys.exit(1)

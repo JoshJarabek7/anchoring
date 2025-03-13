@@ -7,7 +7,8 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
-import { createSession, CrawlSession } from "../../lib/db";
+import { createSession, CrawlSession, saveSessionVectorDBMapping } from "../../lib/db";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 interface CreateSessionFormProps {
   onSessionCreated: (session: CrawlSession) => void;
@@ -17,9 +18,16 @@ interface CreateSessionFormProps {
 const formSchema = z.object({
   title: z.string().min(1, "Title is required"),
   version: z.string().optional(),
+  vectorDb: z.enum(["chromadb", "pinecone"]),
 });
 
 type FormData = z.infer<typeof formSchema>;
+
+// Vector DB options
+const VECTOR_DB_OPTIONS = [
+  { value: "chromadb", label: "ChromaDB (local)" },
+  { value: "pinecone", label: "Pinecone (shared)" },
+];
 
 export default function CreateSessionForm({ 
   onSessionCreated, 
@@ -28,12 +36,14 @@ export default function CreateSessionForm({
   const [submitting, setSubmitting] = useState(false);
   const [titleValue, setTitleValue] = useState("");
   const [versionValue, setVersionValue] = useState("");
+  const [vectorDbValue, setVectorDbValue] = useState<"chromadb" | "pinecone">("chromadb");
   
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "",
       version: "",
+      vectorDb: "chromadb",
     },
     mode: "all",
   });
@@ -56,6 +66,15 @@ export default function CreateSessionForm({
       
       console.log("Submitting session data:", sessionData);
       const session = await createSession(sessionData);
+      
+      // Save vector DB mapping
+      await saveSessionVectorDBMapping({
+        session_id: session.id!,
+        provider_name: vectorDbValue,
+        config_data: JSON.stringify({
+          // Default empty config, will be populated when needed
+        })
+      });
       
       console.log("Session created successfully:", session);
       onSessionCreated(session);
@@ -111,7 +130,32 @@ export default function CreateSessionForm({
             />
           </div>
           
-          {/* ChromaDB path field removed - no longer needed */}
+          <div className="space-y-2">
+            <Label htmlFor="vectorDb">Vector Database</Label>
+            <Select
+              value={vectorDbValue}
+              onValueChange={(value: "chromadb" | "pinecone") => {
+                setVectorDbValue(value);
+                form.setValue("vectorDb", value);
+              }}
+            >
+              <SelectTrigger id="vectorDb">
+                <SelectValue placeholder="Select vector database" />
+              </SelectTrigger>
+              <SelectContent>
+                {VECTOR_DB_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">
+              {vectorDbValue === "chromadb" 
+                ? "ChromaDB stores embeddings locally on your machine." 
+                : "Pinecone stores embeddings in the cloud for better performance and sharing."}
+            </p>
+          </div>
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button 

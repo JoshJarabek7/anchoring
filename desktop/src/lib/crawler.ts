@@ -606,7 +606,7 @@ export const startCrawler = async (config: CrawlerConfig): Promise<void> => {
         const isStartUrl = (url === config.startUrl);
 
         // If URL exists and is already processed, mark as visited and skip (unless it's the start URL)
-        if (!isStartUrl && urlObj && (urlObj.status === 'crawled' || urlObj.status === 'error' || urlObj.status === 'processed')) {
+        if (!isStartUrl && urlObj && (urlObj.status === 'crawled' || urlObj.status === 'processed')) {
           console.log(`Skipping already processed URL from DB check: ${url} (status: ${urlObj.status})`);
           visited.add(url);
           globalVisitedUrls.add(url);

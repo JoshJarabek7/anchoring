@@ -1,11 +1,11 @@
-import { FullDocumentationSnippet } from '@/lib/db';
+import { UniversalDocument } from '@/lib/vector-db/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
 
 interface DocumentationSnippetProps {
-  snippet: FullDocumentationSnippet;
+  snippet: UniversalDocument;
   onViewSource?: (url: string) => void;
 }
 
@@ -15,19 +15,19 @@ export default function DocumentationSnippetCard({ snippet, onViewSource }: Docu
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start gap-2">
           <div>
-            <CardTitle className="text-lg">{snippet.title}</CardTitle>
-            {snippet.source_url && (
+            <CardTitle className="text-lg">{snippet.metadata.title}</CardTitle>
+            {snippet.metadata.source_url && (
               <CardDescription className="text-xs truncate max-w-[300px]">
-                Source: {snippet.source_url}
+                Source: {snippet.metadata.source_url}
               </CardDescription>
             )}
           </div>
           
-          {snippet.source_url && onViewSource && (
+          {snippet.metadata.source_url && onViewSource && (
             <Button 
               variant="ghost" 
               size="icon" 
-              onClick={() => onViewSource(snippet.source_url || '')}
+              onClick={() => onViewSource(snippet.metadata.source_url || '')}
               className="h-8 w-8"
             >
               <ExternalLink className="h-4 w-4" />
@@ -37,7 +37,7 @@ export default function DocumentationSnippetCard({ snippet, onViewSource }: Docu
       </CardHeader>
       
       <CardContent className="pb-2">
-        <div className="mb-3 text-sm text-muted-foreground">{snippet.description}</div>
+        <div className="mb-3 text-sm text-muted-foreground">{snippet.metadata.description}</div>
         
         {/* Render the markdown content with the prose classes */}
         <div 
@@ -58,34 +58,34 @@ export default function DocumentationSnippetCard({ snippet, onViewSource }: Docu
       
       <CardFooter className="flex flex-wrap gap-2 pt-1 pb-3">
         {/* Display metadata as badges */}
-        {snippet.category && (
+        {snippet.metadata.category && (
           <Badge variant="outline" className="text-xs">
-            {snippet.category}
+            {snippet.metadata.category}
           </Badge>
         )}
         
-        {snippet.language && (
+        {snippet.metadata.language && (
           <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950">
-            {snippet.language} {snippet.language_version}
+            {snippet.metadata.language} {snippet.metadata.language_version}
           </Badge>
         )}
         
-        {snippet.framework && (
+        {snippet.metadata.framework && (
           <Badge variant="outline" className="text-xs bg-purple-50 dark:bg-purple-950">
-            {snippet.framework} {snippet.framework_version}
+            {snippet.metadata.framework} {snippet.metadata.framework_version}
           </Badge>
         )}
         
-        {snippet.library && (
+        {snippet.metadata.library && (
           <Badge variant="outline" className="text-xs bg-amber-50 dark:bg-amber-950">
-            {snippet.library} {snippet.library_version}
+            {snippet.metadata.library} {snippet.metadata.library_version}
           </Badge>
         )}
         
         {/* Display concepts if available */}
-        {snippet.concepts && snippet.concepts.length > 0 && (
+        {snippet.metadata.concepts && snippet.metadata.concepts.length > 0 && (
           <div className="w-full mt-2 flex flex-wrap gap-1">
-            {snippet.concepts.map((concept, i) => (
+            {snippet.metadata.concepts.map((concept: string, i: number) => (
               <Badge key={i} variant="secondary" className="text-xs">
                 {concept}
               </Badge>

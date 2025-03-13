@@ -1,10 +1,53 @@
-import { useState, useEffect } from 'react';
-import { ChromaClient } from '../lib/chroma-client';
-import { DocumentationCategory, FullDocumentationSnippet } from '../lib/db';
+import { useState, useEffect, useRef } from 'react';
+import { useVectorDB } from './useVectorDB';
+import { UniversalDocument, DocumentCategory } from '../lib/vector-db/types';
+
+// Debug flag - set to true to enable verbose logging
+const DEBUG = false;
+
+const log = {
+  debug: (...args: any[]) => DEBUG && console.log('[KnowledgeBase]:', ...args),
+  error: (...args: any[]) => console.error('[KnowledgeBase Error]:', ...args)
+};
+
+/**
+ * Interface for a documentation snippet
+ */
+export interface DocSnippet {
+  id: string;
+  title: string;
+  content: string;
+  source: string;
+  category: "language" | "framework" | "library";
+  name: string;
+  version?: string;
+}
+
+/**
+ * Interface for a search result
+ */
+export interface SearchResult {
+  id: string;
+  score: number;
+  snippet: DocSnippet;
+}
+
+/**
+ * Interface for documentation search parameters
+ */
+export interface DocSearchParams {
+  query?: string;
+  category?: "language" | "framework" | "library";
+  componentName?: string;
+  componentVersion?: string;
+  apiKey?: string;
+  limit?: number;  // Number of documents to return
+  page?: number;   // Page number for pagination
+}
 
 // Interface for filters
 export interface KnowledgeBaseFilters {
-  category: DocumentationCategory | 'all';
+  category: DocumentCategory | 'all';
   language?: string;
   language_version?: string;
   framework?: string;
@@ -22,54 +65,78 @@ interface ComponentOptions {
 /**
  * Hook to manage knowledge base search, filtering and available components
  */
-export function useKnowledgeBase(apiKey: string) {
+export function useKnowledgeBase(sessionId: number) {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchResults, setSearchResults] = useState<FullDocumentationSnippet[]>([]);
+  const [searchResults, setSearchResults] = useState<UniversalDocument[]>([]);
   const [filters, setFilters] = useState<KnowledgeBaseFilters>({
     category: 'all'
   });
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableComponents, setAvailableComponents] = useState<ComponentOptions>({
     languages: [],
     frameworks: [],
     libraries: []
   });
+  const [snippets, setSnippets] = useState<UniversalDocument[]>([]);
   
-  // Initialize ChromaClient
-  const getClient = async () => {
-    const client = new ChromaClient(apiKey);
-    await client.initialize();
-    return client;
-  };
+  // Track initialization state
+  const componentsLoaded = useRef(false);
+  const knowledgeBaseLoaded = useRef(false);
+  
+  // Use the vectorDB hook with sessionId
+  const { 
+    vectorDB,
+    loading,
+    error: vectorDBError,
+    isInitialized,
+    searchDocuments,
+    getDocumentsByFilters
+  } = useVectorDB(sessionId);
+  
+  // Update error state when vectorDBError changes
+  useEffect(() => {
+    if (vectorDBError) {
+      log.error('Vector DB error:', vectorDBError);
+      setError(vectorDBError.message);
+    }
+  }, [vectorDBError]);
   
   // Load available components for filters
   const loadAvailableComponents = async () => {
-    if (!apiKey) return;
+    if (!isInitialized) {
+      log.debug('Vector DB not initialized, skipping component load');
+      return;
+    }
+    
+    if (componentsLoaded.current) {
+      log.debug('Components already loaded, skipping');
+      return;
+    }
     
     try {
-      setLoading(true);
-      const client = await getClient();
+      log.debug('Loading available components...');
       
       // Get all component types
-      const languages = await client.getAvailableComponents(DocumentationCategory.LANGUAGE);
-      const frameworks = await client.getAvailableComponents(DocumentationCategory.FRAMEWORK);
-      const libraries = await client.getAvailableComponents(DocumentationCategory.LIBRARY);
+      const languageResults = await getDocumentsByFilters({ category: DocumentCategory.LANGUAGE }, 100);
+      const frameworkResults = await getDocumentsByFilters({ category: DocumentCategory.FRAMEWORK }, 100);
+      const libraryResults = await getDocumentsByFilters({ category: DocumentCategory.LIBRARY }, 100);
       
-      // Release client to free memory
-      (client as any).client = null;
-      (client as any).collection = null;
+      // Extract unique component names
+      const languages = [...new Set(languageResults.map(doc => doc.metadata.language).filter((lang): lang is string => typeof lang === 'string'))];
+      const frameworks = [...new Set(frameworkResults.map(doc => doc.metadata.framework).filter((framework): framework is string => typeof framework === 'string'))];
+      const libraries = [...new Set(libraryResults.map(doc => doc.metadata.library).filter((library): library is string => typeof library === 'string'))];
       
       setAvailableComponents({
         languages,
         frameworks,
         libraries
       });
+      
+      componentsLoaded.current = true;
+      log.debug('Components loaded:', { languages, frameworks, libraries });
     } catch (err) {
-      console.error('Error loading components:', err);
+      log.error('Failed to load components:', err);
       setError('Failed to load available components');
-    } finally {
-      setLoading(false);
     }
   };
   
@@ -80,19 +147,18 @@ export function useKnowledgeBase(apiKey: string) {
       return;
     }
     
-    if (!apiKey) {
-      setError('API key not set');
+    if (!isInitialized) {
+      const errorMsg = 'Vector database not initialized. Please configure it in settings.';
+      log.error(errorMsg);
+      setError(errorMsg);
       return;
     }
     
     try {
       // Clear previous results to free memory
       setSearchResults([]);
-      setLoading(true);
       setError(null);
       setSearchQuery(query);
-      
-      const client = await getClient();
       
       // Prepare filters for the search
       const filtersToUse = searchFilters || filters;
@@ -111,19 +177,16 @@ export function useKnowledgeBase(apiKey: string) {
       if (filtersToUse.library) searchFiltersObj.library = filtersToUse.library;
       if (filtersToUse.library_version) searchFiltersObj.library_version = filtersToUse.library_version;
       
-      // Search with the query and filters - limit to 10 results for memory savings
-      const results = await client.searchDocuments(query, searchFiltersObj, 10);
-      setSearchResults(results);
+      log.debug(`Searching with filters:`, searchFiltersObj);
       
-      // Release client resources
-      (client as any).client = null;
-      (client as any).collection = null;
+      // Search with the query and filters - limit to 10 results for memory savings
+      const results = await searchDocuments(query, searchFiltersObj, 10);
+      log.debug(`Found ${results.length} results`);
+      setSearchResults(results);
     } catch (err) {
-      console.error('Error searching snippets:', err);
+      log.error('Search failed:', err);
       setError('Failed to search documentation snippets');
       setSearchResults([]);
-    } finally {
-      setLoading(false);
     }
   };
   
@@ -141,12 +204,34 @@ export function useKnowledgeBase(apiKey: string) {
     setSearchResults([]);
   };
   
-  // Load components on initial render
+  // Load components and knowledge base when vector DB becomes initialized
   useEffect(() => {
-    if (apiKey) {
+    if (isInitialized && !componentsLoaded.current) {
+      log.debug('Loading components');
       loadAvailableComponents();
     }
-  }, [apiKey]);
+  }, [isInitialized]);
+
+  // Load knowledge base separately
+  useEffect(() => {
+    if (isInitialized && !knowledgeBaseLoaded.current) {
+      log.debug('Loading knowledge base');
+      
+      const loadKnowledgeBase = async () => {
+        try {
+          knowledgeBaseLoaded.current = true;
+          const results = await getDocumentsByFilters({}, 100);
+          log.debug(`Loaded ${results.length} snippets`);
+          setSnippets(results);
+        } catch (err) {
+          log.error('Failed to load knowledge base:', err);
+          setError(err instanceof Error ? err.message : 'Failed to load knowledge base');
+        }
+      };
+      
+      loadKnowledgeBase();
+    }
+  }, [isInitialized, getDocumentsByFilters]);
   
   return {
     searchQuery,
@@ -158,6 +243,8 @@ export function useKnowledgeBase(apiKey: string) {
     searchSnippets,
     updateFilters,
     clearSearch,
-    loadAvailableComponents
+    loadAvailableComponents,
+    snippets,
+    isInitialized
   };
 } 

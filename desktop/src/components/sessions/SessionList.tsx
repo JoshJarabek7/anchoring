@@ -227,7 +227,6 @@ export default function SessionList({ onCreateSession, onSelectSession }: Sessio
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDelete(session.id!)}
-                          className="text-red-500 hover:text-red-700"
                           title="Delete session"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -241,32 +240,38 @@ export default function SessionList({ onCreateSession, onSelectSession }: Sessio
           )}
         </CardContent>
         <CardFooter className="flex justify-between">
-          <Button onClick={onCreateSession}>New Session</Button>
-          <Button variant="outline" onClick={handleImportClick}>
+          <Button 
+            variant="outline" 
+            onClick={handleImportClick}
+          >
             <Upload className="h-4 w-4 mr-2" />
             Import Session
           </Button>
-          <input
-            type="file"
-            ref={fileInputRef}
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            style={{ display: 'none' }} 
+            accept=".json" 
             onChange={handleImportFile}
-            accept=".json"
-            style={{ display: 'none' }}
           />
+          <Button onClick={onCreateSession}>
+            Create New Session
+          </Button>
         </CardFooter>
       </Card>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete this session?</AlertDialogTitle>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the session and all of its URLs, settings, and other data.
+              This action cannot be undone. This will permanently delete the session
+              and all its data.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

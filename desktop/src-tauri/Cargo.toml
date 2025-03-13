@@ -33,5 +33,7 @@ tokio = {version = "1.43.0", features = ["full"] }
 tiktoken-rs = "0.6.0"
 text-splitter = { version = "0.24.1", features = ["tiktoken-rs", "markdown"] }
 html2md = "0.2"
+pinecone-sdk = "0.1.2"
+lazy_static = "1.4.0"
 
 
