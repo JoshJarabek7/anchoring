@@ -1,3 +1,7 @@
 !src/lib/**
 !.env.example
 t2v.md
+**/CLAUDE.md
+**/FrontendInstructions.md
+**/.cursorrules
+**/TODO.md

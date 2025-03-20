@@ -1,161 +1,1892 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
+@variant dark (&:is(.dark *));
 
-@plugin "tailwindcss-animate";
-
-@plugin "@tailwindcss/typography";
-
-@config "../tailwind.config.js";
-
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+/* Light theme variables */
+@theme {
+  /* Base theme variables */
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --background: oklch(0.98 0.05 220 / 0%);
+  --foreground: oklch(0.15 0.05 220);
+  --card: oklch(0.97 0.04 210 / 65%);
+  --card-foreground: oklch(0.15 0.05 220);
+  --popover: oklch(0.97 0.04 210 / 70%);
+  --popover-foreground: oklch(0.15 0.05 220);
+  --primary: oklch(0.65 0.15 240 / 80%);
+  --primary-foreground: oklch(0.985 0.01 220);
+  --secondary: oklch(0.7 0.1 200 / 70%);
+  --secondary-foreground: oklch(0.15 0.05 220);
+  --muted: oklch(0.92 0.04 210 / 60%);
+  --muted-foreground: oklch(0.36 0.05 230);
+  --accent: oklch(0.8 0.08 230 / 65%);
+  --accent-foreground: oklch(0.15 0.05 220);
+  --destructive: oklch(0.6 0.2 20 / 90%);
+  --border: oklch(0.9 0.04 210 / 30%);
+  --input: oklch(0.97 0.04 210 / 55%);
+  --ring: oklch(0.65 0.15 240 / 50%);
+  --chart-1: oklch(0.65 0.15 240 / 90%);
+  --chart-2: oklch(0.7 0.1 200 / 90%);
+  --chart-3: oklch(0.6 0.12 180 / 90%);
+  --chart-4: oklch(0.75 0.07 220 / 90%);
+  --chart-5: oklch(0.55 0.15 210 / 90%);
+  --sidebar: oklch(0.97 0.04 210 / 50%);
+  --sidebar-foreground: oklch(0.15 0.05 220);
+  --sidebar-primary: oklch(0.65 0.15 240 / 75%);
+  --sidebar-primary-foreground: oklch(0.985 0.01 220);
+  --sidebar-accent: oklch(0.7 0.1 200 / 60%);
+  --sidebar-accent-foreground: oklch(0.15 0.05 220);
+  --sidebar-border: oklch(0.9 0.04 210 / 30%);
+  --sidebar-ring: oklch(0.65 0.15 240 / 50%);
+
+  /* Typography variables */
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: "Montserrat", "Inter", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-body-weight: 400;
+  --font-heading-weight: 600;
+  --letter-spacing-normal: 0.01em;
+  --letter-spacing-headings: -0.02em;
+
+  /* Ocean-themed Glassmorphism variables - Enhanced for light mode */
+  --glass-opacity: 0.65;
+  --glass-blur: 12px;
+  --glass-saturation: 1.05;
+  --glass-border-width: 1px;
+  --glass-border-opacity: 0.2;
+  --glass-highlight-opacity: 0.12;
+  --glass-shadow: 0 8px 32px -8px rgba(70, 130, 180, 0.22),
+    0 12px 28px -6px rgba(0, 120, 180, 0.15);
+  --glass-highlight: linear-gradient(
+    135deg,
+    rgba(190, 230, 255, 0.3) 0%,
+    rgba(160, 220, 255, 0.15) 40%,
+    rgba(120, 200, 255, 0.08) 100%
+  );
+  --glass-glow: 0 0 1px 1px rgba(140, 200, 255, 0.1) inset;
+  --glass-noise-opacity: 0.04;
+
+  /* Light mode gradient colors - More vibrant for better light mode */
+  --gradient-color-1: #e0f2ff; /* Light sky blue */
+  --gradient-color-2: #c2e9fb; /* Soft azure */
+  --gradient-color-3: #d4f1f9; /* Pale cyan */
+  --gradient-color-4: #e5f4ff; /* Very light blue */
+  --gradient-color-5: #cce8ff; /* Light blue */
+
+  /* Text enhancement for readability */
+  --text-shadow: 0 1px 1px rgba(0, 20, 40, 0.05);
+
+  /* Bioluminescence effect */
+  --caustics-opacity: 0.08;
+  --caustics-scale: 1;
+
+  /* 3D effect values */
+  --depth-thickness: 8px;
+  --depth-shadow-opacity: 0.15;
+  --depth-accent-opacity: 0.2;
 }
 
+/* Override with dark mode values using CSS selectors */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --background: oklch(0.04 0.03 230 / 0%); /* Much darker background */
+  --foreground: oklch(
+    0.98 0.04 210
+  ); /* Brighter with more saturation for better visibility */
+  --card: oklch(0.1 0.05 230 / 50%); /* Darker card background */
+  --card-foreground: oklch(
+    0.99 0.04 210
+  ); /* Even brighter text for better contrast */
+  --popover: oklch(0.1 0.05 230 / 55%); /* Darker popover */
+  --popover-foreground: oklch(0.99 0.04 210); /* Brighter text */
+  --primary: oklch(0.65 0.18 220 / 75%); /* More vibrant primary */
+  --primary-foreground: oklch(0.15 0.02 240);
+  --secondary: oklch(0.45 0.12 160 / 75%);
+  --secondary-foreground: oklch(0.15 0.02 240);
+  --muted: oklch(0.12 0.1 230 / 55%); /* Darker muted background */
+  --muted-foreground: oklch(
+    0.85 0.06 210
+  ); /* Even brighter muted text for better readability */
+  --accent: oklch(0.45 0.12 160 / 60%);
+  --accent-foreground: oklch(0.15 0.02 240);
+  --destructive: oklch(0.65 0.25 20 / 85%);
+  --border: oklch(0.25 0.1 220 / 30%); /* Darker borders */
+  --input: oklch(0.12 0.05 230 / 45%); /* Darker inputs */
+  --ring: oklch(0.6 0.15 220 / 50%);
+  --chart-1: oklch(0.55 0.2 220 / 85%);
+  --chart-2: oklch(0.45 0.18 180 / 85%);
+  --chart-3: oklch(0.35 0.15 160 / 85%);
+  --chart-4: oklch(0.65 0.1 230 / 85%);
+  --chart-5: oklch(0.4 0.12 200 / 85%);
+  --sidebar: oklch(0.08 0.05 230 / 45%); /* Darker sidebar */
+  --sidebar-foreground: oklch(0.99 0.04 210); /* Brighter sidebar text */
+  --sidebar-primary: oklch(
+    0.65 0.18 220 / 75%
+  ); /* More vibrant sidebar primary */
+  --sidebar-primary-foreground: oklch(0.15 0.02 240);
+  --sidebar-accent: oklch(0.2 0.1 230 / 55%);
+  --sidebar-accent-foreground: oklch(
+    0.99 0.04 210
+  ); /* Brighter sidebar accent text */
+  --sidebar-border: oklch(0.25 0.1 220 / 30%); /* Darker sidebar borders */
+  --sidebar-ring: oklch(0.6 0.15 220 / 50%);
+
+  /* Typography variables remain the same but with adjusted contrast */
+  --text-shadow: 0 1px 3px rgba(0, 20, 40, 0.15);
+
+  /* Ocean-themed Glassmorphism variables - Enhanced for better contrast in dark mode */
+  --glass-opacity: 0.55;
+  --glass-blur: 18px;
+  --glass-saturation: 1.12;
+  --glass-border-width: 1px;
+  --glass-border-opacity: 0.25;
+  --glass-highlight-opacity: 0.05;
+  --glass-shadow: 0 4px 32px -4px rgba(0, 80, 120, 0.25),
+    0 12px 20px -8px rgba(0, 60, 100, 0.15);
+  --glass-highlight: linear-gradient(
+    135deg,
+    rgba(80, 170, 220, 0.15) 0%,
+    rgba(20, 140, 180, 0.06) 50%,
+    rgba(10, 110, 150, 0.03) 100%
+  );
+  --glass-glow: 0 0 0 1px rgba(80, 180, 220, 0.08) inset;
+  --glass-noise-opacity: 0.04;
+
+  /* Deep ocean gradient background */
+  --gradient-color-1: #041e42; /* Deep abyss blue */
+  --gradient-color-2: #0a5171; /* Deep ocean */
+  --gradient-color-3: #073154; /* Midnight blue */
+  --gradient-color-4: #032236; /* Deep sea */
+  --gradient-color-5: #06384f; /* Ocean depths */
+
+  /* Bioluminescence effect */
+  --caustics-opacity: 0.1;
+  --caustics-scale: 0.8;
+
+  /* 3D effect values */
+  --depth-thickness: 10px;
+  --depth-shadow-opacity: 0.18;
+  --depth-accent-opacity: 0.25;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-
-  @keyframes accordion-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-
-  @keyframes accordion-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
-}
-
+/* For proper animations and transitions */
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply transition-colors duration-200;
   }
+
+  /* Add border radius to html and body for window corners */
+  html,
+  body,
+  #root {
+    overflow: hidden !important;
+    position: relative !important;
+    margin: 0 !important;
+    border: none !important;
+    background-color: transparent !important;
+  }
+
+  /* Ensure the window body is transparent */
   body {
-    @apply bg-background text-foreground;
-    min-height: 100vh;
-    margin: 0;
-    padding: 0;
+    backdrop-filter: blur(0) !important;
+    background-color: transparent !important;
   }
+}
 
-  /* Hide scrollbar but keep functionality */
-  .no-scrollbar {
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE and Edge */
+/* Font declarations */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter-italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Montserrat";
+  src: url("/fonts/montserrat.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Montserrat";
+  src: url("/fonts/montserrat-italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Background layers wrapper to optimize compositing */
+.background-layers {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -20;
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Main app background - Enhanced for underwater scuba diving effect */
+.app-background {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -10;
+  background-size: 400% 400%;
+  animation: oceanWaves 35s ease infinite;
+  overflow: hidden;
+  will-change: transform; /* Add hardware acceleration hint */
+  transform: translateZ(0); /* Force GPU rendering */
+  backface-visibility: hidden; /* Reduce repaints */
+  contain: paint; /* Limit paint area */
+  /* Ensure this element gets its own compositing layer */
+  isolation: isolate;
+}
+
+/* Light mode - daytime scuba diving at 10-30 feet deep */
+:root:not(.dark) .app-background {
+  background: linear-gradient(
+    120deg,
+    rgba(100, 180, 220, 0.95) 0%,
+    rgba(80, 160, 210, 0.9) 20%,
+    rgba(120, 190, 225, 0.85) 40%,
+    rgba(70, 155, 205, 0.9) 60%,
+    rgba(90, 175, 215, 0.85) 80%,
+    rgba(60, 150, 200, 0.9) 100%
+  );
+  background-attachment: fixed; /* Improve performance by preventing constant repaints */
+  will-change: opacity; /* Optimize animations */
+}
+
+/* Dark mode - nighttime deep sea diving at 10-30 feet with bioluminescence */
+.dark .app-background {
+  background: linear-gradient(
+    120deg,
+    rgba(4, 18, 32, 0.97) 0%,
+    rgba(6, 24, 46, 0.95) 20%,
+    rgba(8, 30, 54, 0.9) 40%,
+    rgba(5, 20, 38, 0.95) 60%,
+    rgba(7, 28, 50, 0.9) 80%,
+    rgba(4, 22, 42, 0.97) 100%
+  );
+  background-attachment: fixed; /* Improve performance by preventing constant repaints */
+  will-change: opacity; /* Optimize animations */
+}
+
+/* Water surface light rays for daytime scuba effect */
+:root:not(.dark) .app-background::before {
+  content: "";
+  position: absolute;
+  top: -10%;
+  left: 0;
+  right: 0;
+  height: 120%;
+  background: radial-gradient(
+    ellipse at 50% -20%,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(100, 180, 220, 0) 70%
+  );
+  animation: lightRays 15s ease-in-out infinite alternate;
+}
+
+/* Bioluminescent spots for nighttime diving */
+.dark .app-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+      2px 2px at 20% 30%,
+      rgba(56, 189, 248, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      2px 2px at 40% 70%,
+      rgba(16, 185, 129, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      3px 3px at 70% 60%,
+      rgba(124, 58, 237, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      1px 1px at 80% 20%,
+      rgba(45, 212, 191, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      2px 2px at 50% 90%,
+      rgba(56, 189, 248, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      3px 3px at 30% 50%,
+      rgba(16, 185, 129, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      2px 2px at 90% 40%,
+      rgba(124, 58, 237, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      1px 1px at 10% 80%,
+      rgba(45, 212, 191, 0.8) 0%,
+      rgba(0, 0, 0, 0) 100%
+    );
+  background-size: 200% 200%;
+  opacity: 0.4;
+  filter: blur(1px);
+  animation: bioluminescence 20s ease infinite;
+}
+
+/* Enhanced wave patterns that look more like underwater currents */
+.water-pattern {
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0c20 0 20 20 40 20s20-20 40-20 20 20 40 20 20-20 40-20v80c-20 0-20-20-40-20s-20 20-40 20-20-20-40-20-20 20-40 20V0z' fill='%23ffffff' fill-opacity='0.05'/%3E%3C/svg%3E");
+  background-size: 100px 100px;
+  animation: waterCurrents 30s linear infinite;
+  pointer-events: none;
+  z-index: -5;
+  will-change: transform; /* Add hardware acceleration hint */
+  transform: translateZ(0); /* Force GPU rendering */
+  backface-visibility: hidden; /* Reduce repaints */
+  contain: paint; /* Limit paint area */
+  /* Ensure this element gets its own compositing layer */
+  isolation: isolate;
+}
+
+/* Light mode water pattern - underwater current */
+:root:not(.dark) .water-pattern {
+  opacity: 0.18;
+  mix-blend-mode: overlay;
+  filter: blur(0.5px);
+}
+
+/* Dark mode water pattern - subtle underwater current at night */
+.dark .water-pattern {
+  opacity: 0.12;
+  mix-blend-mode: overlay;
+  filter: blur(0.5px) brightness(0.6)
+    drop-shadow(0 0 8px rgba(100, 200, 255, 0.15));
+}
+
+/* Add floating particles to simulate underwater debris */
+.water-pattern::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+      1px 1px at 20% 30%,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      1px 1px at 40% 70%,
+      rgba(255, 255, 255, 0.3) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      1px 1px at 70% 60%,
+      rgba(255, 255, 255, 0.3) 0%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      1px 1px at 80% 20%,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(0, 0, 0, 0) 100%
+    );
+  opacity: 0.3;
+  animation: floatingDebris 60s linear infinite;
+  will-change: transform; /* Add hardware acceleration */
+  transform: translateZ(0); /* Force GPU rendering */
+  contain: paint; /* Limit paint area */
+}
+
+/* Underwater floating particles - optimized for performance */
+.underwater-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -6;
+  contain: strict; /* Improve performance by containing layout/paint */
+  will-change: transform, opacity; /* Hint to browser to optimize */
+  /* Add compositing optimization */
+  transform: translate3d(0,0,0);
+  isolation: isolate;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.5);
+  filter: blur(1px);
+  pointer-events: none;
+  transform-origin: center;
+  animation: float-particle var(--particle-duration, 60s) infinite;
+  will-change: transform; /* Add hardware acceleration */
+  transform: translateZ(0); /* Force GPU rendering */
+}
+
+/* Light mode particles - using box-shadow only when needed */
+:root:not(.dark) .particle {
+  background-color: rgba(255, 255, 255, 0.6);
+  /* Use simpler box-shadow for better performance */
+  box-shadow: 0 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+/* Dark mode particles with bioluminescence - precomputed colors */
+.dark .particle {
+  /* Use fixed glow colors instead of CSS vars for better performance */
+  filter: blur(0.5px);
+}
+
+.dark .particle-0 {
+  background-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 2px rgba(56, 189, 248, 0.5);
+}
+
+.dark .particle-1 {
+  background-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 2px rgba(16, 185, 129, 0.4);
+}
+
+.dark .particle-2 {
+  background-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 2px rgba(99, 102, 241, 0.4);
+}
+
+.dark .particle-3 {
+  background-color: rgba(45, 212, 191, 0.5);
+  box-shadow: 0 0 2px rgba(45, 212, 191, 0.5);
+}
+
+@keyframes float-particle {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0;
   }
+  5% {
+    opacity: var(--particle-opacity, 0.3);
+  }
+  95% {
+    opacity: var(--particle-opacity, 0.3);
+  }
+  100% {
+    /* Use translate3d for hardware acceleration */
+    transform: translate3d(
+      calc(var(--particle-distance, 50) * 1px),
+      calc(var(--particle-distance, -40) * 1px),
+      0
+    );
+    opacity: 0;
+  }
+}
 
-  .no-scrollbar::-webkit-scrollbar {
-    display: none; /* Chrome, Safari and Opera */
+/* Oceanic Glassmorphism Theme - Completely Enhanced */
+
+/* Glass Base Styles */
+.glass {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(var(--glass-blur));
+  color: var(--foreground);
+}
+
+/* Enhanced glass-surface with better light interaction */
+.glass-surface {
+  --glass-opacity: 0.9;
+  --glass-bg-light: rgba(255, 255, 255, var(--glass-opacity));
+  --glass-bg-dark: rgba(16, 50, 90, var(--glass-opacity));
+  --glass-border-opacity-light: 0.1;
+  --glass-border-opacity-dark: 0.2;
+
+  position: relative;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 12px rgba(140, 180, 210, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.dark .glass-surface {
+  background: rgba(13, 35, 61, 0.75);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(70, 130, 180, 0.15);
+}
+
+/* Enhanced glass-deep with more pronounced depth */
+.glass-deep {
+  --glass-opacity: 0.85;
+  --glass-bg-light: rgba(240, 248, 255, var(--glass-opacity));
+  --glass-bg-dark: rgba(10, 40, 80, var(--glass-opacity));
+  --glass-border-opacity-light: 0.15;
+  --glass-border-opacity-dark: 0.25;
+
+  position: relative;
+  backdrop-filter: blur(15px);
+  background: rgba(245, 252, 255, 0.75);
+  box-shadow: 0 4px 20px rgba(120, 160, 200, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  transition: all 0.3s ease;
+}
+
+.dark .glass-deep {
+  background: rgba(8, 28, 52, 0.7);
+  box-shadow: 0 5px 25px rgba(0, 10, 25, 0.4);
+  border: 1px solid rgba(60, 120, 180, 0.18);
+}
+
+/* Enhanced glass-abyss with more dramatic lighting */
+.glass-abyss {
+  --glass-opacity: 0.8;
+  --glass-bg-light: rgba(235, 245, 255, var(--glass-opacity));
+  --glass-bg-dark: rgba(5, 25, 50, var(--glass-opacity));
+  --glass-border-opacity-light: 0.2;
+  --glass-border-opacity-dark: 0.3;
+
+  position: relative;
+  backdrop-filter: blur(20px);
+  background: rgba(235, 245, 255, 0.65);
+  box-shadow: 0 8px 30px rgba(100, 150, 200, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.dark .glass-abyss {
+  background: rgba(5, 20, 40, 0.65);
+  box-shadow: 0 8px 30px rgba(0, 10, 30, 0.5);
+  border: 1px solid rgba(50, 100, 150, 0.2);
+}
+
+/* Add caustics effect to glass-abyss in both modes */
+.glass-abyss::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg width='300' height='300' viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='wave'%3E%3CfeTurbulence baseFrequency='0.01' numOctaves='3' result='warp' /%3E%3CfeDisplacementMap xChannelSelector='R' yChannelSelector='G' scale='10' in='SourceGraphic' in2='warp' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='%23ffffff' filter='url(%23wave)' /%3E%3C/svg%3E");
+  background-size: 400% 400%;
+  opacity: 0.04;
+  animation: caustics-shift 30s ease infinite alternate;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.dark .glass-abyss::after {
+  opacity: 0.06;
+  animation: caustics-shift-dark 30s ease infinite alternate;
+}
+
+@keyframes caustics-shift {
+  0% {
+    background-position: 0% 0%;
+    opacity: 0.03;
+  }
+  50% {
+    opacity: 0.05;
+  }
+  100% {
+    background-position: 100% 100%;
+    opacity: 0.03;
+  }
+}
+
+@keyframes caustics-shift-dark {
+  0% {
+    background-position: 0% 0%;
+    opacity: 0.04;
+  }
+  50% {
+    opacity: 0.08;
+  }
+  100% {
+    background-position: 100% 100%;
+    opacity: 0.04;
+  }
+}
+
+/* Glass Depth Levels - Enhanced */
+.glass-depth-1 {
+  box-shadow: 0 4px 16px -4px rgba(70, 130, 180, 0.15),
+    0 2px 8px -2px rgba(0, 80, 120, 0.1);
+}
+
+.dark .glass-depth-1 {
+  box-shadow: 0 4px 16px -4px rgba(0, 20, 40, 0.25),
+    0 2px 8px -2px rgba(0, 10, 30, 0.2);
+}
+
+.glass-depth-2 {
+  box-shadow: 0 8px 24px -6px rgba(70, 130, 180, 0.2),
+    0 4px 16px -4px rgba(0, 80, 120, 0.15);
+}
+
+.dark .glass-depth-2 {
+  box-shadow: 0 8px 24px -6px rgba(0, 20, 40, 0.3),
+    0 4px 16px -4px rgba(0, 10, 30, 0.25);
+}
+
+.glass-depth-3 {
+  box-shadow: 0 16px 40px -8px rgba(70, 130, 180, 0.25),
+    0 8px 24px -6px rgba(0, 80, 120, 0.2);
+}
+
+.dark .glass-depth-3 {
+  box-shadow: 0 16px 40px -8px rgba(0, 20, 40, 0.35),
+    0 8px 24px -6px rgba(0, 10, 30, 0.3);
+}
+
+/* Additional Glass Effects - Enhanced for both modes */
+.glass-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-ripple::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  opacity: 0;
+  animation: ripple 8s infinite ease-in-out;
+}
+
+.dark .glass-ripple::before {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(100, 180, 255, 0.15),
+    transparent
+  );
+}
+
+@keyframes ripple {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.3;
+  }
+  40% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.glass-noise {
+  position: relative;
+}
+
+.glass-noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/noise.png");
+  background-repeat: repeat;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.dark .glass-noise::after {
+  opacity: 0.07;
+}
+
+.glass-current {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-current::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 180, 255, 0.15),
+    rgba(140, 210, 255, 0.25),
+    rgba(120, 180, 255, 0.15)
+  );
+  animation: current 8s infinite ease-in-out alternate;
+}
+
+.dark .glass-current::before {
+  background: linear-gradient(
+    90deg,
+    rgba(80, 170, 255, 0.25),
+    rgba(100, 190, 255, 0.35),
+    rgba(80, 170, 255, 0.25)
+  );
+}
+
+@keyframes current {
+  0% {
+    background-position: -30% 0;
+  }
+  100% {
+    background-position: 130% 0;
+  }
+}
+
+.glass-depth-striations {
+  position: relative;
+  overflow: hidden;
+}
+
+:root:not(.dark) .glass-depth-striations {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 4px,
+    rgba(200, 230, 255, 0.1) 4px,
+    rgba(200, 230, 255, 0.1) 8px
+  );
+}
+
+.dark .glass-depth-striations {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 4px,
+    rgba(0, 50, 100, 0.15) 4px,
+    rgba(0, 50, 100, 0.15) 8px
+  );
+}
+
+/* Enhanced bioluminescent glow with better light mode support - fixed for dialog */
+.glass-bioluminescent {
+  position: relative;
+  overflow: hidden;
+}
+
+:root:not(.dark) .glass-bioluminescent {
+  box-shadow: 0 0 15px rgba(100, 180, 255, 0.3);
+}
+
+.dark .glass-bioluminescent {
+  box-shadow: 0 0 20px rgba(80, 190, 255, 0.4);
+  border-color: rgba(80, 190, 255, 0.35);
+}
+
+/* Add a static glow effect that doesn't change on hover */
+.glass-bioluminescent::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.2;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(100, 180, 255, 0.4) 0%,
+    rgba(100, 180, 255, 0) 70%
+  );
+  pointer-events: none;
+  z-index: -1;
+  animation: stable-glow 5s infinite alternate ease-in-out;
+}
+
+.dark .glass-bioluminescent::before {
+  opacity: 0.4;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(80, 190, 255, 0.5) 0%,
+    rgba(80, 190, 255, 0) 70%
+  );
+}
+
+/* Make hover effects separate from static glow */
+.glass-bioluminescent::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0; /* Start with no opacity */
+  background: radial-gradient(
+    circle at var(--x, 50%) var(--y, 50%),
+    rgba(56, 189, 248, 0.4) 0%,
+    rgba(56, 189, 248, 0) 60%
+  );
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+:root:not(.dark) .glass-bioluminescent::after {
+  background: radial-gradient(
+    circle at var(--x, 50%) var(--y, 50%),
+    rgba(100, 180, 255, 0.3) 0%,
+    rgba(100, 180, 255, 0) 60%
+  );
+}
+
+.dark .glass-bioluminescent::after {
+  background: radial-gradient(
+    circle at var(--x, 50%) var(--y, 50%),
+    rgba(80, 190, 255, 0.5) 0%,
+    rgba(80, 190, 255, 0) 70%
+  );
+}
+
+/* Only show hover effect when actually hovering */
+.glass-bioluminescent:hover::after {
+  opacity: 0.6;
+}
+
+@keyframes stable-glow {
+  0% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.4;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes pulse-glow {
+  0% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0.8;
+  }
+}
+
+/* New glowing accents class for adding subtle glow to elements */
+.glass-glow-accent {
+  position: relative;
+  overflow: hidden;
+}
+
+:root:not(.dark) .glass-glow-accent {
+  box-shadow: 0 0 15px rgba(120, 190, 255, 0.25);
+}
+
+.dark .glass-glow-accent {
+  box-shadow: 0 0 15px rgba(30, 144, 255, 0.3);
+}
+
+.glass-glow-accent::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(120, 190, 255, 0.15) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  z-index: -1;
+  animation: accent-pulse 6s ease-in-out infinite alternate;
+}
+
+.dark .glass-glow-accent::before {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(30, 144, 255, 0.2) 0%,
+    transparent 70%
+  );
+}
+
+@keyframes accent-pulse {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+/* Enhanced glass-current with more visible glow */
+.glass-current {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-current::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 180, 255, 0.15),
+    rgba(140, 210, 255, 0.25),
+    rgba(120, 180, 255, 0.15)
+  );
+  animation: current 8s infinite ease-in-out alternate;
+}
+
+.dark .glass-current::before {
+  background: linear-gradient(
+    90deg,
+    rgba(80, 170, 255, 0.25),
+    rgba(100, 190, 255, 0.35),
+    rgba(80, 170, 255, 0.25)
+  );
+}
+
+/* Add a subtle after-element for enhanced glow */
+.glass-current::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(180, 220, 255, 0.1) 0%,
+    transparent 50%,
+    rgba(140, 200, 255, 0.12) 100%
+  );
+  animation: glow-shift 10s infinite ease-in-out alternate;
+}
+
+.dark .glass-current::after {
+  background: linear-gradient(
+    135deg,
+    rgba(70, 160, 240, 0.12) 0%,
+    transparent 50%,
+    rgba(50, 140, 240, 0.14) 100%
+  );
+}
+
+@keyframes glow-shift {
+  0% {
+    opacity: 0.3;
+    transform: scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0.7;
+    transform: scale(1.05) rotate(1deg);
+  }
+}
+
+/* Button enhancements for visibility with more compact sizing */
+.button-high-contrast {
+  @apply !bg-blue-600 hover:!bg-blue-700 !text-white dark:!bg-blue-500 dark:hover:!bg-blue-600;
+  @apply dark:shadow-[0_0_15px_rgba(56,189,248,0.3)];
+  @apply text-sm py-1.5 px-3;
+}
+
+/* Enhanced glass-button styling with better glow effects and smaller size */
+.glass-button {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    to bottom right,
+    rgba(130, 200, 255, 0.9),
+    rgba(70, 160, 240, 0.8)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 15px rgba(70, 160, 240, 0.3);
+  color: rgba(10, 50, 80, 0.9);
+  transition: all 0.3s ease;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.75rem;
+  height: auto;
+}
+
+.dark .glass-button {
+  background: linear-gradient(
+    to bottom right,
+    rgba(70, 150, 240, 0.8),
+    rgba(40, 120, 220, 0.7)
+  );
+  border: 1px solid rgba(120, 200, 255, 0.3);
+  box-shadow: 0 4px 15px rgba(20, 80, 150, 0.5);
+  color: rgba(230, 245, 255, 0.95);
+}
+
+/* Restore button hover effects */
+.glass-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(70, 160, 240, 0.4);
+}
+
+.dark .glass-button:hover {
+  box-shadow: 0 6px 20px rgba(0, 40, 80, 0.5), 0 0 15px rgba(56, 189, 248, 0.3);
+}
+
+.glass-button:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 255, 255, 0.25) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.glass-button:hover:after {
+  opacity: 1;
+}
+
+/* Adjust general heading sizes */
+h1,
+.h1 {
+  font-size: 1.75rem !important;
+  line-height: 1.3 !important;
+}
+
+h2,
+.h2 {
+  font-size: 1.5rem !important;
+  line-height: 1.3 !important;
+}
+
+h3,
+.h3 {
+  font-size: 1.25rem !important;
+  line-height: 1.3 !important;
+}
+
+/* Reduce text size in secondary areas */
+.text-sm {
+  font-size: 0.813rem !important;
+}
+
+.text-xs {
+  font-size: 0.75rem !important;
+}
+
+/* Make dialog interfaces more compact */
+.dialog-content {
+  --dialog-bg-opacity-light: 0.85;
+  --dialog-bg-opacity-dark: 0.9;
+  background-color: rgba(255, 255, 255, var(--dialog-bg-opacity-light));
+  color: rgba(15, 23, 42, 0.95); /* text-slate-900 with higher opacity */
+}
+
+.dark .dialog-content {
+  background-color: rgba(10, 38, 66, var(--dialog-bg-opacity-dark));
+  color: rgba(226, 232, 240, 0.95); /* text-slate-200 with higher opacity */
+}
+
+/* Adjust button component sizes */
+[data-slot="button"] {
+  height: auto !important;
+  padding-top: 0.375rem !important;
+  padding-bottom: 0.375rem !important;
+  font-size: 0.875rem !important;
+}
+
+[data-slot="button"][data-size="sm"] {
+  height: auto !important;
+  padding-top: 0.25rem !important;
+  padding-bottom: 0.25rem !important;
+  font-size: 0.75rem !important;
+}
+
+/* Adjust form controls to be more compact */
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  height: 2.25rem !important;
+  font-size: 0.875rem !important;
+}
+
+/* Make tabs more compact */
+[data-slot="tabs-trigger"] {
+  padding: 0.375rem 0.75rem !important;
+  font-size: 0.875rem !important;
+}
+
+/* Improve spacing in containers */
+.p-6 {
+  padding: 1.25rem !important;
+}
+
+.space-y-6 {
+  row-gap: 1.25rem !important;
+}
+
+/* Adjust card padding */
+[data-slot="card"] {
+  padding: 1.25rem !important;
+}
+
+[data-slot="card-header"] {
+  padding: 1rem 1.25rem !important;
+}
+
+[data-slot="card-content"] {
+  padding: 1rem 1.25rem !important;
+  padding-top: 0.5rem !important;
+}
+
+/* Performance optimizations */
+.hw-accelerated {
+  @apply will-change-transform;
+  translate: 0;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* High-performance card styles */
+.performant-card {
+  @apply relative overflow-hidden;
+  contain: content;
+}
+
+/* Hide scrollbars but maintain scroll functionality */
+* {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Ensure content areas have proper overflow behaviors */
+.overflow-auto,
+.overflow-y-auto,
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
+/* Add subtle fade effect to scrollable areas */
+.overflow-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+}
+
+.overflow-fade-top {
+  -webkit-mask-image: linear-gradient(to top, black 85%, transparent 100%);
+  mask-image: linear-gradient(to top, black 85%, transparent 100%);
+}
+
+.overflow-fade-both {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 8%,
+    black 92%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 8%,
+    black 92%,
+    transparent 100%
+  );
+  position: relative;
+}
+
+/* When the window is maximized, disable border radius */
+html.maximized,
+html.maximized body,
+html.maximized #root {
+  border-radius: 0;
+}
+
+/* Text color utilities */
+.text-foreground {
+  color: rgba(15, 23, 42, 0.95) !important; /* Darker for better contrast */
+}
+
+.dark .text-foreground {
+  color: rgba(241, 245, 249, 0.98) !important; /* Lighter for better contrast */
+}
+
+.text-primary {
+  color: var(--primary) !important;
+}
+
+.dark .text-primary {
+  color: var(--primary) !important;
+}
+
+.text-primary-foreground {
+  color: var(--primary-foreground) !important;
+}
+
+.text-secondary {
+  color: var(--secondary) !important;
+}
+
+.text-secondary-foreground {
+  color: var(--secondary-foreground) !important;
+}
+
+.text-muted {
+  color: rgba(71, 85, 105, 0.95) !important;
+}
+
+.dark .text-muted {
+  color: rgba(203, 213, 225, 0.95) !important;
+}
+
+.text-muted-foreground {
+  color: rgba(
+    71,
+    85,
+    105,
+    0.9
+  ) !important; /* text-slate-600 with higher opacity */
+}
+
+.dark .text-muted-foreground {
+  color: rgba(
+    148,
+    163,
+    184,
+    0.95
+  ) !important; /* text-slate-400 with higher opacity */
+}
+
+.text-accent {
+  color: var(--accent) !important;
+}
+
+.text-accent-foreground {
+  color: var(--accent-foreground) !important;
+}
+
+.text-destructive {
+  color: var(--destructive) !important;
+}
+
+/* Enhanced text readability for headings */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: var(--letter-spacing-headings);
+  color: var(--foreground);
+  text-shadow: var(--text-shadow);
+}
+
+/* Background color utilities */
+.bg-foreground {
+  background-color: var(--foreground);
+}
+
+.bg-primary {
+  background-color: var(--primary);
+}
+
+.bg-secondary {
+  background-color: var(--secondary);
+}
+
+.bg-muted {
+  background-color: var(--muted);
+}
+
+.bg-accent {
+  background-color: var(--accent);
+}
+
+.bg-destructive {
+  background-color: var(--destructive);
+}
+
+/* Add glowing highlight to selected elements */
+.glass-selected {
+  position: relative;
+}
+
+:root:not(.dark) .glass-selected {
+  box-shadow: 0 0 15px rgba(100, 180, 255, 0.3);
+  border-color: rgba(100, 180, 255, 0.4) !important;
+}
+
+.dark .glass-selected {
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+  border-color: rgba(56, 189, 248, 0.5) !important;
+}
+
+/* Animation for Dialog elements to have a subtle glow */
+.glass-dialog {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-dialog::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(140, 200, 255, 0.15) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  opacity: 0;
+  animation: dialog-glow 10s infinite ease-in-out alternate;
+}
+
+.dark .glass-dialog::before {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(56, 189, 248, 0.15) 0%,
+    transparent 70%
+  );
+}
+
+@keyframes dialog-glow {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+/* Override Radix UI Dialog positioning */
+[data-radix-dialog-content] {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-height: 85vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin: auto !important;
+  overflow: hidden !important;
+}
+
+[data-radix-dialog-overlay] {
+  position: fixed !important;
+  inset: 0 !important;
+  background-color: rgba(0, 20, 40, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+/* Make sure dialog content is scrollable if it exceeds the max height */
+[data-radix-dialog-content] > div {
+  max-height: calc(85vh - 6rem);
+  overflow-y: auto;
+}
+
+/* Create a more pronounced caustics animation */
+@keyframes caustics {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translateX(-50%) translateY(-50%) scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: translateX(-50%) translateY(-50%) scale(1.1);
+  }
+}
+
+/* Add a new keyframe animation for background gradient shifts */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Add glowing ripple effect to focused inputs */
+.glass-input {
+  background-color: rgba(240, 250, 255, 0.4);
+  border: 1px solid rgba(200, 230, 255, 0.5);
+  box-shadow: 0 2px 6px rgba(140, 190, 240, 0.1);
+  transition: background 0.2s, border 0.2s, box-shadow 0.2s;
+  box-sizing: border-box; /* Ensure consistent sizing */
+}
+
+.dark .glass-input {
+  background-color: rgba(10, 30, 60, 0.5);
+  border: 1px solid rgba(40, 100, 160, 0.35);
+  box-shadow: 0 2px 6px rgba(0, 20, 40, 0.2);
+}
+
+.glass-input:focus {
+  background-color: rgba(240, 250, 255, 0.5);
+  border-color: rgba(100, 180, 255, 0.6);
+  box-shadow: 0 0 0 1px rgba(100, 180, 255, 0.25),
+    0 4px 10px rgba(100, 180, 255, 0.15);
+  position: relative;
+  outline: none;
+  box-sizing: border-box; /* Ensure consistent sizing */
+}
+
+.dark .glass-input:focus {
+  background-color: rgba(15, 40, 70, 0.5);
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3),
+    0 4px 10px rgba(20, 60, 120, 0.3);
+  outline: none;
+}
+
+.glass-input:focus::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit; /* Use the same border radius as the input */
+  background: radial-gradient(
+    circle at center,
+    rgba(140, 200, 255, 0.3) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  animation: input-focus-glow 2s infinite ease-in-out;
+}
+
+.dark .glass-input:focus::after {
+  background: radial-gradient(
+    circle at center,
+    rgba(56, 189, 248, 0.25) 0%,
+    transparent 70%
+  );
+}
+
+@keyframes input-focus-glow {
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+/* Label styling with theme variables */
+.glass-label {
+  color: rgba(15, 23, 42, 0.95);
+  font-weight: 500;
+}
+
+/* Make all dialogs more centered and glowing */
+[data-slot="dialog-content"] {
+  max-height: 85vh !important;
+  margin: auto !important;
+  overflow-y: auto !important;
+}
+
+/* Apply glass-dialog styles to all dialog content */
+[data-slot="dialog-content"] {
+  position: relative;
+  overflow: hidden;
+}
+
+[data-slot="dialog-content"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(140, 200, 255, 0.15) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  opacity: 0;
+  animation: dialog-glow 10s infinite ease-in-out alternate;
+}
+
+.dark [data-slot="dialog-content"]::before {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(56, 189, 248, 0.15) 0%,
+    transparent 70%
+  );
+}
+
+/* Glass glow accent for dialog headers and footers */
+[data-slot="dialog-header"],
+[data-slot="dialog-footer"] {
+  position: relative;
+  z-index: 1; /* Ensure content stays above the background effect */
+}
+
+/* Remove the background gradient effect from dialog headers */
+[data-slot="dialog-header"]::before,
+[data-slot="dialog-footer"]::before {
+  display: none;
+}
+
+/* Add more glowing to dialog overlay */
+[data-slot="dialog-overlay"] {
+  background-color: rgba(0, 40, 80, 0.3) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+/* Animations */
+@keyframes waterWave {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.water-wave-animation {
+  @apply bg-linear-to-r/oklch from-blue-400/40 via-teal-400/40 to-blue-400/40 dark:from-blue-500/40 dark:via-teal-500/40 dark:to-blue-500/40;
+  @apply bg-[size:200%_100%];
+  animation: waterWave 3s ease infinite;
+  will-change: background-position;
+}
+
+.water-pulse {
+  @apply animate-pulse;
+}
+
+/* Support for will-change-transform for performance */
+.will-change-transform {
+  will-change: transform;
+}
+
+/* Caustics Effect */
+.caustics {
+  @apply after:absolute after:inset-0 after:bg-[url('/caustics.png')] after:bg-cover after:opacity-30;
+  @apply after:mix-blend-overlay;
+  @apply after:will-change-transform;
+}
+
+.caustics::after {
+  animation: waterWave 10s ease infinite;
+}
+
+/* Enhanced dialog styling for dark mode */
+.dark .dialog-content {
+  background: var(--dialog-bg-dark);
+  border: 1px solid var(--dialog-border-dark);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 2px 20px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(60, 120, 180, 0.1) inset;
+}
+
+/* Glass backgrounds with improved contrast */
+.glass-surface {
+  --surface-bg-opacity-light: 0.8;
+  --surface-text-shadow-light: 0 0 1px rgba(255, 255, 255, 0.5);
+  background-color: rgba(255, 255, 255, var(--surface-bg-opacity-light));
+  backdrop-filter: blur(8px);
+}
+
+.dark .glass-surface {
+  --surface-bg-opacity-dark: 0.85;
+  --surface-text-shadow-dark: 0 0 1px rgba(0, 0, 0, 0.5);
+  background-color: rgba(10, 30, 58, var(--surface-bg-opacity-dark));
+  backdrop-filter: blur(8px);
+}
+
+.glass-deep {
+  --deep-bg-opacity-light: 0.85;
+  background-color: rgba(240, 249, 255, var(--deep-bg-opacity-light));
+  backdrop-filter: blur(10px);
+}
+
+.dark .glass-deep {
+  --deep-bg-opacity-dark: 0.9;
+  background-color: rgba(10, 38, 66, var(--deep-bg-opacity-dark));
+  backdrop-filter: blur(10px);
+}
+
+.glass-abyss {
+  --abyss-bg-opacity-light: 0.9;
+  background-color: rgba(236, 246, 255, var(--abyss-bg-opacity-light));
+  backdrop-filter: blur(12px);
+}
+
+.dark .glass-abyss {
+  --abyss-bg-opacity-dark: 0.92;
+  background-color: rgba(10, 30, 54, var(--abyss-bg-opacity-dark));
+  backdrop-filter: blur(12px);
+}
+
+/* Improved text contrast for all text on glass backgrounds */
+.glass h1,
+.glass h2,
+.glass h3,
+.glass h4,
+.glass h5,
+.glass h6,
+.glass-surface h1,
+.glass-surface h2,
+.glass-surface h3,
+.glass-surface h4,
+.glass-surface h5,
+.glass-surface h6,
+.glass-deep h1,
+.glass-deep h2,
+.glass-deep h3,
+.glass-deep h4,
+.glass-deep h5,
+.glass-deep h6,
+.glass-abyss h1,
+.glass-abyss h2,
+.glass-abyss h3,
+.glass-abyss h4,
+.glass-abyss h5,
+.glass-abyss h6 {
+  color: rgba(15, 23, 42, 0.95); /* text-slate-900 with higher opacity */
+  text-shadow: var(--surface-text-shadow-light);
+}
+
+.dark .glass h1,
+.dark .glass h2,
+.dark .glass h3,
+.dark .glass h4,
+.dark .glass h5,
+.dark .glass h6,
+.dark .glass-surface h1,
+.dark .glass-surface h2,
+.dark .glass-surface h3,
+.dark .glass-surface h4,
+.dark .glass-surface h5,
+.dark .glass-surface h6,
+.dark .glass-deep h1,
+.dark .glass-deep h2,
+.dark .glass-deep h3,
+.dark .glass-deep h4,
+.dark .glass-deep h5,
+.dark .glass-deep h6,
+.dark .glass-abyss h1,
+.dark .glass-abyss h2,
+.dark .glass-abyss h3,
+.dark .glass-abyss h4,
+.dark .glass-abyss h5,
+.dark .glass-abyss h6 {
+  color: rgba(226, 232, 240, 0.98); /* text-slate-200 with higher opacity */
+  text-shadow: var(--surface-text-shadow-dark);
+}
+
+/* Paragraph text contrast improvement */
+.glass p,
+.glass-surface p,
+.glass-deep p,
+.glass-abyss p,
+.glass .text-sm,
+.glass-surface .text-sm,
+.glass-deep .text-sm,
+.glass-abyss .text-sm {
+  color: rgba(
+    15,
+    23,
+    42,
+    0.9
+  ); /* text-slate-900 with slightly higher opacity */
+}
+
+.dark .glass p,
+.dark .glass-surface p,
+.dark .glass-deep p,
+.dark .glass-abyss p,
+.dark .glass .text-sm,
+.dark .glass-surface .text-sm,
+.dark .glass-deep .text-sm,
+.dark .glass-abyss .text-sm {
+  color: rgba(203, 213, 225, 0.98); /* text-slate-300 with higher opacity */
+}
+
+/* Improved dialog content text contrast */
+[data-slot="dialog-content"] {
+  color: rgba(15, 23, 42, 0.95);
+}
+
+.dark [data-slot="dialog-content"] {
+  color: rgba(226, 232, 240, 0.98);
+}
+
+/* Improved contrast for dialog headers */
+[data-slot="dialog-title"] {
+  color: rgba(15, 23, 42, 1);
+  font-weight: 600;
+}
+
+.dark [data-slot="dialog-title"] {
+  color: rgba(241, 245, 249, 1);
+  font-weight: 600;
+}
+
+/* Enhanced contrast for form labels */
+.glass-label {
+  color: rgba(15, 23, 42, 0.95);
+  font-weight: 500;
+}
+
+.dark .glass-label {
+  color: rgba(226, 232, 240, 0.98);
+  font-weight: 500;
+}
+
+/* Improved placeholder text visibility */
+::placeholder {
+  color: rgba(
+    71,
+    85,
+    105,
+    0.8
+  ) !important; /* text-slate-600 with high opacity */
+  opacity: 1;
+}
+
+.dark ::placeholder {
+  color: rgba(
+    148,
+    163,
+    184,
+    0.85
+  ) !important; /* text-slate-400 with higher opacity */
+  opacity: 1;
+}
+
+/* Style focused placeholders */
+:focus::placeholder {
+  color: rgba(71, 85, 105, 0.9) !important;
+  opacity: 1;
+}
+
+.dark :focus::placeholder {
+  color: rgba(148, 163, 184, 0.95) !important;
+  opacity: 1;
+}
+
+/* Dialog close button styling with bioluminescence in dark mode */
+.dialog-close-button {
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.dialog-close-button:hover {
+  background-color: rgba(226, 232, 240, 0.1);
+}
+
+/* Dark mode bioluminescent effect */
+.dark .dialog-close-button {
+  color: rgba(226, 232, 240, 0.8);
+  overflow: hidden;
+}
+
+.dark .dialog-close-button:hover {
+  color: rgba(226, 232, 240, 1);
+  background-color: rgba(56, 189, 248, 0.15);
+  box-shadow: 0 0 5px 1px rgba(56, 189, 248, 0.25),
+    0 0 3px rgba(56, 189, 248, 0.1) inset;
+}
+
+.dark .dialog-close-button:hover svg {
+  filter: drop-shadow(0 0 1px rgba(56, 189, 248, 0.7));
+}
+
+.dark .dialog-close-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at center,
+    rgba(56, 189, 248, 0.3) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  border-radius: inherit;
+}
+
+.dark .dialog-close-button:hover::before {
+  opacity: 0.5;
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+@keyframes waterCurrents {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+  33% {
+    transform: translate3d(0, -20px, 0) rotate(1deg) scale(1.05);
+  }
+  66% {
+    transform: translate3d(0, -10px, 0) rotate(-1deg) scale(0.95);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes floatingDebris {
+  0% {
+    background-position: 0% 0%;
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    background-position: 100% 100%;
+    transform: translate3d(0, -20px, 0);
+  }
+  100% {
+    background-position: 0% 0%;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Optimize keyframes to use only transform and opacity, not layout properties */
+@keyframes oceanWaves {
+  0%,
+  100% {
+    background-position: 0% 30%;
+    transform: translateZ(0);
+  }
+  25% {
+    background-position: 50% 40%;
+    transform: translateZ(0);
+  }
+  50% {
+    background-position: 100% 60%;
+    transform: translateZ(0);
+  }
+  75% {
+    background-position: 50% 70%;
+    transform: translateZ(0);
+  }
+}
+
+@keyframes bioluminescence {
+  0%,
+  100% {
+    background-position: 0% 0%;
+    opacity: 0.4;
+    transform: translateZ(0);
+  }
+  50% {
+    background-position: 100% 100%;
+    opacity: 0.5;
+    transform: translateZ(0);
   }
 }

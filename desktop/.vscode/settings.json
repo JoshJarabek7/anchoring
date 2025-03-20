@@ -1,0 +1,11 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "localhost",
+            "driver": "PostgreSQL",
+            "name": "Anchoring Desktop",
+            "connectString": "postgresql://anchoring:anchoring@localhost:5432/anchoring"
+        }
+    ]
+}

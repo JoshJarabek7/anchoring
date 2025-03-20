@@ -1,16 +1,23 @@
-import * as React from "react"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
+import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
 function ScrollArea({
   className,
   children,
+  type = "auto",
+  scrollHideDelay = 600,
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  type?: "auto" | "always" | "scroll" | "hover",
+  scrollHideDelay?: number
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
+      type={type}
+      scrollHideDelay={scrollHideDelay}
       className={cn("relative", className)}
       {...props}
     >
@@ -31,23 +38,24 @@ function ScrollBar({
   orientation = "vertical",
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>) {
+  // Return a completely transparent scrollbar to hide it but maintain functionality
   return (
     <ScrollAreaPrimitive.ScrollAreaScrollbar
       data-slot="scroll-area-scrollbar"
       orientation={orientation}
       className={cn(
-        "flex touch-none p-px transition-colors select-none",
+        "invisible flex touch-none p-0 transition-colors select-none",
         orientation === "vertical" &&
-          "h-full w-2.5 border-l border-l-transparent",
+          "h-full w-0 border-l border-l-transparent",
         orientation === "horizontal" &&
-          "h-2.5 flex-col border-t border-t-transparent",
+          "h-0 flex-col border-t border-t-transparent",
         className
       )}
       {...props}
     >
       <ScrollAreaPrimitive.ScrollAreaThumb
         data-slot="scroll-area-thumb"
-        className="bg-border relative flex-1 rounded-full"
+        className="invisible relative flex-1 rounded-full"
       />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   )
