@@ -119,7 +119,7 @@ uv run --python ">=3.10,<3.13" --with chromadb --with mcp[cli] --with numpy --wi
 :: Install desktop dependencies if needed
 echo Installing desktop dependencies...
 cd "%PROJECT_ROOT%\desktop"
-call npm install
+call npm install --force
 
 :: Start the application
 echo Starting Tauri application...
