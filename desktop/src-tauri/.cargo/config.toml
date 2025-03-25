@@ -1,8 +1,0 @@
-[build]
-target-dir = "target"
-
-[target.'cfg(rustfmt)'.build]
-target-dir = "target/rustfmt"
-
-[target.'cfg(rust-analyzer)'.build]
-target-dir = "target/rust-analyzer" 
