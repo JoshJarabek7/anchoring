@@ -12,9 +12,6 @@
     "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-show",
-    "opener:default",
-    "store:default",
-    "os:default"
+    "core:window:allow-show"
   ]
 }

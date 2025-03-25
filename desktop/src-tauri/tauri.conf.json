@@ -9,17 +9,34 @@
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
+  
   "app": {
-    "windows": [
-
-    ],
+    
+"windows": [
+  {
+    "label": "main",
+    "title": "Anchoring",
+    "width": 2560,
+    "height": 1440,
+    "resizable": true,
+    "fullscreen": false,
+    "devtools": true,
+    "transparent": true,
+    "url": "index.html"
+  }
+],
     "withGlobalTauri": true,
     "security": {
-      "csp": null,
-      "capabilities": ["default"]
+      "csp": null
     },
     "macOSPrivateApi": true,
-    "enableGTKAppId": true
+    "enableGTKAppId": true,
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "showMenuOnLeftClick": true,
+      "tooltip": "Anchoring Desktop"
+    }
   },
   "bundle": {
     "active": true,

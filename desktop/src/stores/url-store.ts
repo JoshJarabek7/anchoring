@@ -37,6 +37,7 @@ export interface CrawlingSettings {
   prefixPath?: string;
   antiPaths?: string;
   antiKeywords?: string;
+  skipProcessed?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,14 +100,17 @@ export const useUrlStore = create<UrlState>((set, get) => ({
   fetchUrl: async (urlId) => {
     try {
       set({ isLoading: true, error: null });
-      const url = await invoke<DocumentationUrl | null>('get_full_documentation_url', {
-        urlId: urlId
+      
+      // Always include full content when fetching individual URL details
+      const url = await invoke<DocumentationUrl>('get_full_documentation_url', {
+        urlId
       });
+      
       set({ isLoading: false });
-      return url;
+      return url || null;
     } catch (error) {
-      set({
-        isLoading: false,
+      set({ 
+        isLoading: false, 
         error: error instanceof Error ? error.message : `Failed to fetch URL ${urlId}`
       });
       return null;
@@ -135,13 +139,23 @@ export const useUrlStore = create<UrlState>((set, get) => ({
   },
   
   updateUrlStatus: (urlId, status) => {
-    set(state => ({
-      urls: state.urls.map(url => 
-        url.id === urlId 
-          ? { ...url, status } 
-          : url
-      )
-    }));
+    set(state => {
+      const url = state.urls.find(u => u.id === urlId);
+      
+      // Only update if status is actually changing
+      if (url && url.status !== status) {
+        return {
+          urls: state.urls.map(url => 
+            url.id === urlId 
+              ? { ...url, status } 
+              : url
+          )
+        };
+      }
+      
+      // Return unchanged state if nothing changes
+      return { urls: state.urls };
+    });
   },
   
   toggleUrlSelection: (urlId) => {
@@ -149,11 +163,15 @@ export const useUrlStore = create<UrlState>((set, get) => ({
       const { selectedUrls } = state;
       const isSelected = selectedUrls.includes(urlId);
       
-      return {
-        selectedUrls: isSelected
-          ? selectedUrls.filter(id => id !== urlId)
-          : [...selectedUrls, urlId]
-      };
+      // Only update state if it's actually changing
+      if (!isSelected && !selectedUrls.includes(urlId)) {
+        return { selectedUrls: [...selectedUrls, urlId] };
+      } else if (isSelected) {
+        return { selectedUrls: selectedUrls.filter(id => id !== urlId) };
+      }
+      
+      // Return unchanged state if nothing changes
+      return { selectedUrls };
     });
   },
   
@@ -169,27 +187,19 @@ export const useUrlStore = create<UrlState>((set, get) => ({
   
   fetchCrawlingSettings: async (versionId) => {
     try {
-      console.log("Fetching crawling settings for versionId:", versionId);
       set({ isLoading: true, error: null });
       
-      console.log("Making backend call to get_version_crawling_settings...");
-      const settings = await invoke<CrawlingSettings | null>('get_version_crawling_settings', {
+      // This will always return settings due to get_or_create_default behavior
+      const settings = await invoke<CrawlingSettings>('get_version_crawling_settings', {
         versionId: versionId
       });
       
-      console.log("Received crawling settings:", settings);
       if (settings) {
-        console.log("Settings ID:", settings.id);
-        console.log("Settings data:", {
-          prefixPath: settings.prefixPath,
-          antiPaths: settings.antiPaths,
-          antiKeywords: settings.antiKeywords
-        });
+        set({ currentCrawlingSettings: settings, isLoading: false });
       } else {
-        console.warn("No settings received from backend - this should not happen with the updated backend");
+        console.error("No crawling settings returned - this should not happen");
+        set({ isLoading: false });
       }
-      
-      set({ currentCrawlingSettings: settings, isLoading: false });
     } catch (error) {
       console.error("Error fetching crawling settings:", error);
       set({
@@ -199,24 +209,26 @@ export const useUrlStore = create<UrlState>((set, get) => ({
     }
   },
   
-  saveCrawlingSettings: async (settings: Partial<CrawlingSettings>) => {
+  saveCrawlingSettings: async (settings) => {
     try {
       set({ isLoading: true, error: null });
       
-      console.log("Saving crawling settings with data:", settings);
+      // Ensure we're updating the correct settings
+      const result = await invoke<CrawlingSettings>('save_version_crawling_settings', {
+        crawlingSettingsId: settings.id, // This should exist now
+        versionId: settings.versionId,
+        prefixPath: settings.prefixPath,
+        antiPaths: settings.antiPaths,
+        antiKeywords: settings.antiKeywords,
+        skipProcessed: settings.skipProcessed
+      });
       
-      // Send settings directly without any case conversion - backend handles it
-      const updatedSettings = await invoke<CrawlingSettings>('save_version_crawling_settings', settings);
-      console.log("Received updated settings from backend:", updatedSettings);
+      // Update state with the updated settings
+      set({ currentCrawlingSettings: result, isLoading: false });
       
-      if (updatedSettings) {
-        set({ currentCrawlingSettings: updatedSettings, isLoading: false });
-        return updatedSettings;
-      } else {
-        throw new Error("No settings returned from backend");
-      }
+      return result;
     } catch (error) {
-      console.error("Failed to save crawling settings:", error);
+      console.error("Error saving crawling settings:", error);
       set({
         isLoading: false,
         error: error instanceof Error ? error.message : 'Failed to save crawling settings'
@@ -228,7 +240,7 @@ export const useUrlStore = create<UrlState>((set, get) => ({
   applyUrlFilters: async (versionId) => {
     try {
       set({ isLoading: true, error: null });
-      const skippedCount = await invoke<number>('apply_url_filters', {
+      const deletedCount = await invoke<number>('apply_url_filters', {
         versionId: versionId
       });
       
@@ -236,7 +248,7 @@ export const useUrlStore = create<UrlState>((set, get) => ({
       await get().fetchUrls(versionId);
       
       set({ isLoading: false });
-      return skippedCount;
+      return deletedCount;
     } catch (error) {
       set({
         isLoading: false,

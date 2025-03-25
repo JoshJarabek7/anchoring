@@ -21,7 +21,6 @@ export type TaskStage = {
 export type TaskCardProps = {
   id: string;
   title: string;
-  description?: string;
   progress: number;
   status:
     | "idle"
@@ -33,8 +32,6 @@ export type TaskCardProps = {
     | "cancelled";
   stages?: TaskStage[];
   created: Date;
-  onPause?: () => void;
-  onResume?: () => void;
   onCancel?: () => void;
   className?: string;
 };
@@ -43,13 +40,10 @@ export const TaskCard = React.memo(
   ({
     id,
     title,
-    description,
     progress,
     status,
     stages = [],
     created,
-    onPause,
-    onResume,
     onCancel,
     className,
   }: TaskCardProps) => {
@@ -84,7 +78,7 @@ export const TaskCard = React.memo(
       if (isFailed) return "bg-destructive/80 text-white";
       if (isCancelled) return "bg-muted text-foreground/90";
       if (isPaused) return "bg-amber-500/70 text-white";
-      if (isActive) return "bg-primary/70 dark:glass-bioluminescent text-white";
+      if (isActive) return "bg-primary/70 glass-bioluminescent text-white";
       return "bg-muted/60 text-foreground/90";
     };
 

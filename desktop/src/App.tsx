@@ -1,71 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { AppHeader } from "./components/app-header";
 import { MainLayout } from "./components/layout/main-layout";
 import { setupEventListeners } from "./lib/event-handlers";
+import { initializeWorker, workerService } from "./lib/worker-service";
 import { useTaskStore } from "./stores/task-store";
 import { useTechnologyStore } from "./stores/technology-store";
 import { useUIStore } from "./stores/ui-store";
 import { DeepDiveView } from "./views/deep-dive-view";
 import { KnowledgeReefView } from "./views/knowledge-reef-view";
-
-// Separate memoized component for underwater particles to prevent rerenders
-const UnderwaterParticles = React.memo(() => {
-  // Generate particles once to avoid recalculation on re-renders
-  const particles = useMemo(() => {
-    return Array.from({ length: 20 }).map((_, i) => ({
-      key: `particle-${i}`,
-      class: `particle particle-${i % 4}`,
-      left: `${Math.random() * 100}%`,
-      top: `${Math.random() * 100}%`,
-      width: `${2 + Math.random() * 2}px`,
-      height: `${2 + Math.random() * 2}px`,
-      animationDelay: `${Math.random() * 30}s`,
-      animationDuration: `${60 + Math.random() * 40}s`,
-      opacity: (0.2 + Math.random() * 0.3).toString(),
-      distance: (
-        (Math.random() > 0.5 ? 1 : -1) *
-        (40 + Math.random() * 120)
-      ).toString(),
-    }));
-  }, []);
-
-  return (
-    <div className="underwater-particles">
-      {particles.map((particle) => (
-        <div
-          key={particle.key}
-          className={particle.class}
-          style={
-            {
-              left: particle.left,
-              top: particle.top,
-              width: particle.width,
-              height: particle.height,
-              animationDelay: particle.animationDelay,
-              animationDuration: particle.animationDuration,
-              "--particle-opacity": particle.opacity,
-              "--particle-distance": particle.distance,
-            } as React.CSSProperties
-          }
-        />
-      ))}
-    </div>
-  );
-});
-
-// Separate memoized component for background elements to prevent rerenders
-const BackgroundElements = React.memo(() => {
-  return (
-    <div className="background-layers">
-      <div className="app-background">
-        <UnderwaterParticles />
-      </div>
-      <div className="water-pattern" />
-    </div>
-  );
-});
 
 function App() {
   const [initialized, setInitialized] = useState(false);
@@ -91,17 +35,22 @@ function App() {
   // Initialize the app
   useEffect(() => {
     if (!initialized) {
+      // Initialize worker first
+      initializeWorker();
       initializeApp();
     }
+
+    // Clean up worker when app unmounts
+    return () => {
+      console.log("Terminating worker...");
+      workerService.terminate();
+    };
   }, [initialized, initializeApp]);
 
   return (
     <>
-      {/* Oceanic background - now in an isolated component outside the main app tree */}
-      <BackgroundElements />
-
       {/* Main app container */}
-      <div className="flex flex-col relative overflow-hidden bg-transparent w-screen h-screen hw-accelerated">
+      <div className="flex flex-col relative overflow-hidden bg-transparent w-screen h-screen hw-accelerated app-root">
         {/* Header - positioned with proper z-index */}
         <div className="relative z-50 flex justify-center items-center pt-4 px-4">
           <AppHeader />

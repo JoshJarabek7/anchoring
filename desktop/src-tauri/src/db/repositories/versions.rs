@@ -69,38 +69,39 @@ impl_repository!(
 );
 
 // Convenient public functions
-pub async fn get_all_versions() -> Result<Vec<TechnologyVersion>, DbError> {
-    VersionRepository::new().get_all().await
-}
+// These functions are not currently used in the codebase and are commented out to avoid warnings
+// pub async fn get_all_versions() -> Result<Vec<TechnologyVersion>, DbError> {
+//     VersionRepository::new().get_all().await
+// }
 
-pub async fn get_versions_for_technology(tech_id: Uuid) -> Result<Vec<TechnologyVersion>, DbError> {
-    VersionRepository::new().get_for_technology(tech_id).await
-}
+// pub async fn get_versions_for_technology(tech_id: Uuid) -> Result<Vec<TechnologyVersion>, DbError> {
+//     VersionRepository::new().get_for_technology(tech_id).await
+// }
 
-pub async fn get_version(id: Uuid) -> Result<Option<TechnologyVersion>, DbError> {
-    VersionRepository::new().get_by_id(id).await
-}
+// pub async fn get_version(id: Uuid) -> Result<Option<TechnologyVersion>, DbError> {
+//     VersionRepository::new().get_by_id(id).await
+// }
 
-pub async fn create_version(version: TechnologyVersion) -> Result<TechnologyVersion, DbError> {
-    VersionRepository::new().create(&version).await
-}
+// pub async fn create_version(version: TechnologyVersion) -> Result<TechnologyVersion, DbError> {
+//     VersionRepository::new().create(&version).await
+// }
 
-pub async fn update_version(
-    id: Uuid,
-    version: TechnologyVersion,
-) -> Result<TechnologyVersion, DbError> {
-    VersionRepository::new().update(id, &version).await
-}
+// pub async fn update_version(
+//     id: Uuid,
+//     version: TechnologyVersion,
+// ) -> Result<TechnologyVersion, DbError> {
+//     VersionRepository::new().update(id, &version).await
+// }
 
-pub async fn delete_version(id: Uuid) -> Result<bool, DbError> {
-    VersionRepository::new().delete(id).await
-}
+// pub async fn delete_version(id: Uuid) -> Result<bool, DbError> {
+//     VersionRepository::new().delete(id).await
+// }
 
-pub async fn find_version(
-    tech_id: Uuid,
-    version_str: &str,
-) -> Result<Option<TechnologyVersion>, DbError> {
-    VersionRepository::new()
-        .find_by_version(tech_id, version_str)
-        .await
-}
+// pub async fn find_version(
+//     tech_id: Uuid,
+//     version_str: &str,
+// ) -> Result<Option<TechnologyVersion>, DbError> {
+//     VersionRepository::new()
+//         .find_by_version(tech_id, version_str)
+//         .await
+// }

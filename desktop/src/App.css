@@ -1,100 +1,14 @@
 @import "tailwindcss";
 
-@variant dark (&:is(.dark *));
 
-/* Light theme variables */
+/* Default theme variables (dark mode only) */
 @theme {
   /* Base theme variables */
   --radius: 0.625rem;
-  --background: oklch(0.98 0.05 220 / 0%);
-  --foreground: oklch(0.15 0.05 220);
-  --card: oklch(0.97 0.04 210 / 65%);
-  --card-foreground: oklch(0.15 0.05 220);
-  --popover: oklch(0.97 0.04 210 / 70%);
-  --popover-foreground: oklch(0.15 0.05 220);
-  --primary: oklch(0.65 0.15 240 / 80%);
-  --primary-foreground: oklch(0.985 0.01 220);
-  --secondary: oklch(0.7 0.1 200 / 70%);
-  --secondary-foreground: oklch(0.15 0.05 220);
-  --muted: oklch(0.92 0.04 210 / 60%);
-  --muted-foreground: oklch(0.36 0.05 230);
-  --accent: oklch(0.8 0.08 230 / 65%);
-  --accent-foreground: oklch(0.15 0.05 220);
-  --destructive: oklch(0.6 0.2 20 / 90%);
-  --border: oklch(0.9 0.04 210 / 30%);
-  --input: oklch(0.97 0.04 210 / 55%);
-  --ring: oklch(0.65 0.15 240 / 50%);
-  --chart-1: oklch(0.65 0.15 240 / 90%);
-  --chart-2: oklch(0.7 0.1 200 / 90%);
-  --chart-3: oklch(0.6 0.12 180 / 90%);
-  --chart-4: oklch(0.75 0.07 220 / 90%);
-  --chart-5: oklch(0.55 0.15 210 / 90%);
-  --sidebar: oklch(0.97 0.04 210 / 50%);
-  --sidebar-foreground: oklch(0.15 0.05 220);
-  --sidebar-primary: oklch(0.65 0.15 240 / 75%);
-  --sidebar-primary-foreground: oklch(0.985 0.01 220);
-  --sidebar-accent: oklch(0.7 0.1 200 / 60%);
-  --sidebar-accent-foreground: oklch(0.15 0.05 220);
-  --sidebar-border: oklch(0.9 0.04 210 / 30%);
-  --sidebar-ring: oklch(0.65 0.15 240 / 50%);
-
-  /* Typography variables */
-  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-heading: "Montserrat", "Inter", system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --font-body-weight: 400;
-  --font-heading-weight: 600;
-  --letter-spacing-normal: 0.01em;
-  --letter-spacing-headings: -0.02em;
-
-  /* Ocean-themed Glassmorphism variables - Enhanced for light mode */
-  --glass-opacity: 0.65;
-  --glass-blur: 12px;
-  --glass-saturation: 1.05;
-  --glass-border-width: 1px;
-  --glass-border-opacity: 0.2;
-  --glass-highlight-opacity: 0.12;
-  --glass-shadow: 0 8px 32px -8px rgba(70, 130, 180, 0.22),
-    0 12px 28px -6px rgba(0, 120, 180, 0.15);
-  --glass-highlight: linear-gradient(
-    135deg,
-    rgba(190, 230, 255, 0.3) 0%,
-    rgba(160, 220, 255, 0.15) 40%,
-    rgba(120, 200, 255, 0.08) 100%
-  );
-  --glass-glow: 0 0 1px 1px rgba(140, 200, 255, 0.1) inset;
-  --glass-noise-opacity: 0.04;
-
-  /* Light mode gradient colors - More vibrant for better light mode */
-  --gradient-color-1: #e0f2ff; /* Light sky blue */
-  --gradient-color-2: #c2e9fb; /* Soft azure */
-  --gradient-color-3: #d4f1f9; /* Pale cyan */
-  --gradient-color-4: #e5f4ff; /* Very light blue */
-  --gradient-color-5: #cce8ff; /* Light blue */
-
-  /* Text enhancement for readability */
-  --text-shadow: 0 1px 1px rgba(0, 20, 40, 0.05);
-
-  /* Bioluminescence effect */
-  --caustics-opacity: 0.08;
-  --caustics-scale: 1;
-
-  /* 3D effect values */
-  --depth-thickness: 8px;
-  --depth-shadow-opacity: 0.15;
-  --depth-accent-opacity: 0.2;
-}
-
-/* Override with dark mode values using CSS selectors */
-.dark {
-  --background: oklch(0.04 0.03 230 / 0%); /* Much darker background */
-  --foreground: oklch(
-    0.98 0.04 210
-  ); /* Brighter with more saturation for better visibility */
+  --background: oklch(0.04 0.03 230 / 0%); /* Dark background */
+  --foreground: oklch(0.98 0.04 210); /* Brighter with more saturation for better visibility */
   --card: oklch(0.1 0.05 230 / 50%); /* Darker card background */
-  --card-foreground: oklch(
-    0.99 0.04 210
-  ); /* Even brighter text for better contrast */
+  --card-foreground: oklch(0.99 0.04 210); /* Even brighter text for better contrast */
   --popover: oklch(0.1 0.05 230 / 55%); /* Darker popover */
   --popover-foreground: oklch(0.99 0.04 210); /* Brighter text */
   --primary: oklch(0.65 0.18 220 / 75%); /* More vibrant primary */
@@ -102,9 +16,7 @@
   --secondary: oklch(0.45 0.12 160 / 75%);
   --secondary-foreground: oklch(0.15 0.02 240);
   --muted: oklch(0.12 0.1 230 / 55%); /* Darker muted background */
-  --muted-foreground: oklch(
-    0.85 0.06 210
-  ); /* Even brighter muted text for better readability */
+  --muted-foreground: oklch(0.85 0.06 210); /* Even brighter muted text for better readability */
   --accent: oklch(0.45 0.12 160 / 60%);
   --accent-foreground: oklch(0.15 0.02 240);
   --destructive: oklch(0.65 0.25 20 / 85%);
@@ -118,37 +30,28 @@
   --chart-5: oklch(0.4 0.12 200 / 85%);
   --sidebar: oklch(0.08 0.05 230 / 45%); /* Darker sidebar */
   --sidebar-foreground: oklch(0.99 0.04 210); /* Brighter sidebar text */
-  --sidebar-primary: oklch(
-    0.65 0.18 220 / 75%
-  ); /* More vibrant sidebar primary */
+  --sidebar-primary: oklch(0.65 0.18 220 / 75%); /* More vibrant sidebar primary */
   --sidebar-primary-foreground: oklch(0.15 0.02 240);
   --sidebar-accent: oklch(0.2 0.1 230 / 55%);
-  --sidebar-accent-foreground: oklch(
-    0.99 0.04 210
-  ); /* Brighter sidebar accent text */
+  --sidebar-accent-foreground: oklch(0.99 0.04 210); /* Brighter sidebar accent text */
   --sidebar-border: oklch(0.25 0.1 220 / 30%); /* Darker sidebar borders */
   --sidebar-ring: oklch(0.6 0.15 220 / 50%);
 
-  /* Typography variables remain the same but with adjusted contrast */
-  --text-shadow: 0 1px 3px rgba(0, 20, 40, 0.15);
+  /* Typography variables */
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: "Montserrat", "Inter", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-body-weight: 400;
+  --font-heading-weight: 600;
+  --letter-spacing-normal: 0.01em;
+  --letter-spacing-headings: -0.02em;
 
-  /* Ocean-themed Glassmorphism variables - Enhanced for better contrast in dark mode */
+  /* Ocean-themed Glassmorphism variables - Enhanced for dark mode */
   --glass-opacity: 0.55;
-  --glass-blur: 18px;
-  --glass-saturation: 1.12;
-  --glass-border-width: 1px;
-  --glass-border-opacity: 0.25;
-  --glass-highlight-opacity: 0.05;
-  --glass-shadow: 0 4px 32px -4px rgba(0, 80, 120, 0.25),
-    0 12px 20px -8px rgba(0, 60, 100, 0.15);
-  --glass-highlight: linear-gradient(
-    135deg,
-    rgba(80, 170, 220, 0.15) 0%,
-    rgba(20, 140, 180, 0.06) 50%,
-    rgba(10, 110, 150, 0.03) 100%
-  );
-  --glass-glow: 0 0 0 1px rgba(80, 180, 220, 0.08) inset;
-  --glass-noise-opacity: 0.04;
+  
+  /* Platform-specific background color variables */
+  --platform-background-color: rgba(6, 32, 60, 0.5);
+  --platform-background-solid: rgb(6, 32, 60);
 
   /* Deep ocean gradient background */
   --gradient-color-1: #041e42; /* Deep abyss blue */
@@ -157,15 +60,15 @@
   --gradient-color-4: #032236; /* Deep sea */
   --gradient-color-5: #06384f; /* Ocean depths */
 
-  /* Bioluminescence effect */
-  --caustics-opacity: 0.1;
-  --caustics-scale: 0.8;
+  /* Text enhancement for readability */
+  --text-shadow: 0 1px 3px rgba(0, 20, 40, 0.15);
 
   /* 3D effect values */
   --depth-thickness: 10px;
   --depth-shadow-opacity: 0.18;
   --depth-accent-opacity: 0.25;
 }
+
 
 /* For proper animations and transitions */
 @layer base {
@@ -254,23 +157,9 @@
   isolation: isolate;
 }
 
-/* Light mode - daytime scuba diving at 10-30 feet deep */
-:root:not(.dark) .app-background {
-  background: linear-gradient(
-    120deg,
-    rgba(100, 180, 220, 0.95) 0%,
-    rgba(80, 160, 210, 0.9) 20%,
-    rgba(120, 190, 225, 0.85) 40%,
-    rgba(70, 155, 205, 0.9) 60%,
-    rgba(90, 175, 215, 0.85) 80%,
-    rgba(60, 150, 200, 0.9) 100%
-  );
-  background-attachment: fixed; /* Improve performance by preventing constant repaints */
-  will-change: opacity; /* Optimize animations */
-}
+/* App background - only dark mode styles needed */
 
-/* Dark mode - nighttime deep sea diving at 10-30 feet with bioluminescence */
-.dark .app-background {
+.app-background {
   background: linear-gradient(
     120deg,
     rgba(4, 18, 32, 0.97) 0%,
@@ -284,24 +173,9 @@
   will-change: opacity; /* Optimize animations */
 }
 
-/* Water surface light rays for daytime scuba effect */
-:root:not(.dark) .app-background::before {
-  content: "";
-  position: absolute;
-  top: -10%;
-  left: 0;
-  right: 0;
-  height: 120%;
-  background: radial-gradient(
-    ellipse at 50% -20%,
-    rgba(255, 255, 255, 0.3) 0%,
-    rgba(100, 180, 220, 0) 70%
-  );
-  animation: lightRays 15s ease-in-out infinite alternate;
-}
+/* Bioluminescent spots effect */
 
-/* Bioluminescent spots for nighttime diving */
-.dark .app-background::before {
+.app-background::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -368,15 +242,8 @@
   isolation: isolate;
 }
 
-/* Light mode water pattern - underwater current */
-:root:not(.dark) .water-pattern {
-  opacity: 0.18;
-  mix-blend-mode: overlay;
-  filter: blur(0.5px);
-}
-
-/* Dark mode water pattern - subtle underwater current at night */
-.dark .water-pattern {
+/* Water pattern styling - subtle underwater current */
+.water-pattern {
   opacity: 0.12;
   mix-blend-mode: overlay;
   filter: blur(0.5px) brightness(0.6)
@@ -440,35 +307,28 @@
   transform: translateZ(0); /* Force GPU rendering */
 }
 
-/* Light mode particles - using box-shadow only when needed */
-:root:not(.dark) .particle {
-  background-color: rgba(255, 255, 255, 0.6);
-  /* Use simpler box-shadow for better performance */
-  box-shadow: 0 0 1px 1px rgba(255, 255, 255, 0.4);
-}
-
-/* Dark mode particles with bioluminescence - precomputed colors */
-.dark .particle {
+/* Particles with bioluminescence - precomputed colors */
+.particle {
   /* Use fixed glow colors instead of CSS vars for better performance */
   filter: blur(0.5px);
 }
 
-.dark .particle-0 {
+.particle-0 {
   background-color: rgba(56, 189, 248, 0.5);
   box-shadow: 0 0 2px rgba(56, 189, 248, 0.5);
 }
 
-.dark .particle-1 {
+.particle-1 {
   background-color: rgba(16, 185, 129, 0.4);
   box-shadow: 0 0 2px rgba(16, 185, 129, 0.4);
 }
 
-.dark .particle-2 {
+.particle-2 {
   background-color: rgba(99, 102, 241, 0.4);
   box-shadow: 0 0 2px rgba(99, 102, 241, 0.4);
 }
 
-.dark .particle-3 {
+.particle-3 {
   background-color: rgba(45, 212, 191, 0.5);
   box-shadow: 0 0 2px rgba(45, 212, 191, 0.5);
 }
@@ -506,104 +366,62 @@
   color: var(--foreground);
 }
 
-/* Enhanced glass-surface with better light interaction */
+/* Enhanced glass-surface with dark mode styling */
 .glass-surface {
   --glass-opacity: 0.9;
-  --glass-bg-light: rgba(255, 255, 255, var(--glass-opacity));
-  --glass-bg-dark: rgba(16, 50, 90, var(--glass-opacity));
-  --glass-border-opacity-light: 0.1;
-  --glass-border-opacity-dark: 0.2;
+  --glass-bg: rgba(16, 50, 90, var(--glass-opacity));
+  --glass-border-opacity: 0.2;
 
   position: relative;
   backdrop-filter: blur(10px);
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 2px 12px rgba(140, 180, 210, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  transition: all 0.3s ease;
-}
-
-.dark .glass-surface {
   background: rgba(13, 35, 61, 0.75);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(70, 130, 180, 0.15);
+  transition: all 0.3s ease;
 }
 
 /* Enhanced glass-deep with more pronounced depth */
 .glass-deep {
   --glass-opacity: 0.85;
-  --glass-bg-light: rgba(240, 248, 255, var(--glass-opacity));
-  --glass-bg-dark: rgba(10, 40, 80, var(--glass-opacity));
-  --glass-border-opacity-light: 0.15;
-  --glass-border-opacity-dark: 0.25;
+  --glass-bg: rgba(10, 40, 80, var(--glass-opacity));
+  --glass-border-opacity: 0.25;
 
   position: relative;
   backdrop-filter: blur(15px);
-  background: rgba(245, 252, 255, 0.75);
-  box-shadow: 0 4px 20px rgba(120, 160, 200, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  transition: all 0.3s ease;
-}
-
-.dark .glass-deep {
   background: rgba(8, 28, 52, 0.7);
   box-shadow: 0 5px 25px rgba(0, 10, 25, 0.4);
   border: 1px solid rgba(60, 120, 180, 0.18);
+  transition: all 0.3s ease;
 }
 
 /* Enhanced glass-abyss with more dramatic lighting */
 .glass-abyss {
   --glass-opacity: 0.8;
-  --glass-bg-light: rgba(235, 245, 255, var(--glass-opacity));
-  --glass-bg-dark: rgba(5, 25, 50, var(--glass-opacity));
-  --glass-border-opacity-light: 0.2;
-  --glass-border-opacity-dark: 0.3;
+  --glass-bg: rgba(5, 25, 50, var(--glass-opacity));
+  --glass-border-opacity: 0.3;
 
   position: relative;
   backdrop-filter: blur(20px);
-  background: rgba(235, 245, 255, 0.65);
-  box-shadow: 0 8px 30px rgba(100, 150, 200, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(5, 20, 40, 0.65);
+  box-shadow: 0 8px 30px rgba(0, 10, 30, 0.5);
+  border: 1px solid rgba(50, 100, 150, 0.2);
   transition: all 0.3s ease;
   overflow: hidden;
 }
 
-.dark .glass-abyss {
-  background: rgba(5, 20, 40, 0.65);
-  box-shadow: 0 8px 30px rgba(0, 10, 30, 0.5);
-  border: 1px solid rgba(50, 100, 150, 0.2);
-}
-
-/* Add caustics effect to glass-abyss in both modes */
+/* Add caustics effect to glass-abyss */
 .glass-abyss::after {
   content: "";
   position: absolute;
   inset: 0;
   background-image: url("data:image/svg+xml,%3Csvg width='300' height='300' viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='wave'%3E%3CfeTurbulence baseFrequency='0.01' numOctaves='3' result='warp' /%3E%3CfeDisplacementMap xChannelSelector='R' yChannelSelector='G' scale='10' in='SourceGraphic' in2='warp' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='%23ffffff' filter='url(%23wave)' /%3E%3C/svg%3E");
   background-size: 400% 400%;
-  opacity: 0.04;
-  animation: caustics-shift 30s ease infinite alternate;
+  opacity: 0.06;
+  animation: caustics-shift-dark 30s ease infinite alternate;
   mix-blend-mode: overlay;
   pointer-events: none;
 }
 
-.dark .glass-abyss::after {
-  opacity: 0.06;
-  animation: caustics-shift-dark 30s ease infinite alternate;
-}
-
-@keyframes caustics-shift {
-  0% {
-    background-position: 0% 0%;
-    opacity: 0.03;
-  }
-  50% {
-    opacity: 0.05;
-  }
-  100% {
-    background-position: 100% 100%;
-    opacity: 0.03;
-  }
-}
 
 @keyframes caustics-shift-dark {
   0% {
@@ -621,36 +439,21 @@
 
 /* Glass Depth Levels - Enhanced */
 .glass-depth-1 {
-  box-shadow: 0 4px 16px -4px rgba(70, 130, 180, 0.15),
-    0 2px 8px -2px rgba(0, 80, 120, 0.1);
-}
-
-.dark .glass-depth-1 {
   box-shadow: 0 4px 16px -4px rgba(0, 20, 40, 0.25),
     0 2px 8px -2px rgba(0, 10, 30, 0.2);
 }
 
 .glass-depth-2 {
-  box-shadow: 0 8px 24px -6px rgba(70, 130, 180, 0.2),
-    0 4px 16px -4px rgba(0, 80, 120, 0.15);
-}
-
-.dark .glass-depth-2 {
   box-shadow: 0 8px 24px -6px rgba(0, 20, 40, 0.3),
     0 4px 16px -4px rgba(0, 10, 30, 0.25);
 }
 
 .glass-depth-3 {
-  box-shadow: 0 16px 40px -8px rgba(70, 130, 180, 0.25),
-    0 8px 24px -6px rgba(0, 80, 120, 0.2);
-}
-
-.dark .glass-depth-3 {
   box-shadow: 0 16px 40px -8px rgba(0, 20, 40, 0.35),
     0 8px 24px -6px rgba(0, 10, 30, 0.3);
 }
 
-/* Additional Glass Effects - Enhanced for both modes */
+/* Additional Glass Effects - Enhanced for dark mode */
 .glass-ripple {
   position: relative;
   overflow: hidden;
@@ -663,20 +466,11 @@
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.3),
+    rgba(100, 180, 255, 0.15),
     transparent
   );
   opacity: 0;
   animation: ripple 8s infinite ease-in-out;
-}
-
-.dark .glass-ripple::before {
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(100, 180, 255, 0.15),
-    transparent
-  );
 }
 
 @keyframes ripple {
@@ -706,13 +500,9 @@
   inset: 0;
   background-image: url("/noise.png");
   background-repeat: repeat;
-  opacity: 0.05;
+  opacity: 0.07;
   mix-blend-mode: overlay;
   pointer-events: none;
-}
-
-.dark .glass-noise::after {
-  opacity: 0.07;
 }
 
 .glass-current {
@@ -733,7 +523,8 @@
   animation: current 8s infinite ease-in-out alternate;
 }
 
-.dark .glass-current::before {
+/* Use dark mode styling */
+.glass-current::before {
   background: linear-gradient(
     90deg,
     rgba(80, 170, 255, 0.25),
@@ -756,17 +547,7 @@
   overflow: hidden;
 }
 
-:root:not(.dark) .glass-depth-striations {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent,
-    transparent 4px,
-    rgba(200, 230, 255, 0.1) 4px,
-    rgba(200, 230, 255, 0.1) 8px
-  );
-}
-
-.dark .glass-depth-striations {
+.glass-depth-striations {
   background-image: repeating-linear-gradient(
     to bottom,
     transparent,
@@ -776,17 +557,10 @@
   );
 }
 
-/* Enhanced bioluminescent glow with better light mode support - fixed for dialog */
+/* Enhanced bioluminescent glow - fixed for dialog */
 .glass-bioluminescent {
   position: relative;
   overflow: hidden;
-}
-
-:root:not(.dark) .glass-bioluminescent {
-  box-shadow: 0 0 15px rgba(100, 180, 255, 0.3);
-}
-
-.dark .glass-bioluminescent {
   box-shadow: 0 0 20px rgba(80, 190, 255, 0.4);
   border-color: rgba(80, 190, 255, 0.35);
 }
@@ -796,24 +570,15 @@
   content: "";
   position: absolute;
   inset: 0;
-  opacity: 0.2;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(100, 180, 255, 0.4) 0%,
-    rgba(100, 180, 255, 0) 70%
-  );
-  pointer-events: none;
-  z-index: -1;
-  animation: stable-glow 5s infinite alternate ease-in-out;
-}
-
-.dark .glass-bioluminescent::before {
   opacity: 0.4;
   background: radial-gradient(
     circle at 50% 50%,
     rgba(80, 190, 255, 0.5) 0%,
     rgba(80, 190, 255, 0) 70%
   );
+  pointer-events: none;
+  z-index: -1;
+  animation: stable-glow 5s infinite alternate ease-in-out;
 }
 
 /* Make hover effects separate from static glow */
@@ -824,28 +589,12 @@
   opacity: 0; /* Start with no opacity */
   background: radial-gradient(
     circle at var(--x, 50%) var(--y, 50%),
-    rgba(56, 189, 248, 0.4) 0%,
-    rgba(56, 189, 248, 0) 60%
+    rgba(80, 190, 255, 0.5) 0%,
+    rgba(80, 190, 255, 0) 70%
   );
   transition: opacity 0.3s ease;
   pointer-events: none;
   z-index: 0;
-}
-
-:root:not(.dark) .glass-bioluminescent::after {
-  background: radial-gradient(
-    circle at var(--x, 50%) var(--y, 50%),
-    rgba(100, 180, 255, 0.3) 0%,
-    rgba(100, 180, 255, 0) 60%
-  );
-}
-
-.dark .glass-bioluminescent::after {
-  background: radial-gradient(
-    circle at var(--x, 50%) var(--y, 50%),
-    rgba(80, 190, 255, 0.5) 0%,
-    rgba(80, 190, 255, 0) 70%
-  );
 }
 
 /* Only show hover effect when actually hovering */
@@ -877,13 +626,6 @@
 .glass-glow-accent {
   position: relative;
   overflow: hidden;
-}
-
-:root:not(.dark) .glass-glow-accent {
-  box-shadow: 0 0 15px rgba(120, 190, 255, 0.25);
-}
-
-.dark .glass-glow-accent {
   box-shadow: 0 0 15px rgba(30, 144, 255, 0.3);
 }
 
@@ -893,20 +635,12 @@
   inset: 0;
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(120, 190, 255, 0.15) 0%,
+    rgba(30, 144, 255, 0.2) 0%,
     transparent 70%
   );
   opacity: 0;
   z-index: -1;
   animation: accent-pulse 6s ease-in-out infinite alternate;
-}
-
-.dark .glass-glow-accent::before {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(30, 144, 255, 0.2) 0%,
-    transparent 70%
-  );
 }
 
 @keyframes accent-pulse {
@@ -932,20 +666,11 @@
   inset: 0;
   background: linear-gradient(
     90deg,
-    rgba(120, 180, 255, 0.15),
-    rgba(140, 210, 255, 0.25),
-    rgba(120, 180, 255, 0.15)
-  );
-  animation: current 8s infinite ease-in-out alternate;
-}
-
-.dark .glass-current::before {
-  background: linear-gradient(
-    90deg,
     rgba(80, 170, 255, 0.25),
     rgba(100, 190, 255, 0.35),
     rgba(80, 170, 255, 0.25)
   );
+  animation: current 8s infinite ease-in-out alternate;
 }
 
 /* Add a subtle after-element for enhanced glow */
@@ -955,20 +680,11 @@
   inset: 0;
   background: linear-gradient(
     135deg,
-    rgba(180, 220, 255, 0.1) 0%,
-    transparent 50%,
-    rgba(140, 200, 255, 0.12) 100%
-  );
-  animation: glow-shift 10s infinite ease-in-out alternate;
-}
-
-.dark .glass-current::after {
-  background: linear-gradient(
-    135deg,
     rgba(70, 160, 240, 0.12) 0%,
     transparent 50%,
     rgba(50, 140, 240, 0.14) 100%
   );
+  animation: glow-shift 10s infinite ease-in-out alternate;
 }
 
 @keyframes glow-shift {
@@ -984,8 +700,8 @@
 
 /* Button enhancements for visibility with more compact sizing */
 .button-high-contrast {
-  @apply !bg-blue-600 hover:!bg-blue-700 !text-white dark:!bg-blue-500 dark:hover:!bg-blue-600;
-  @apply dark:shadow-[0_0_15px_rgba(56,189,248,0.3)];
+  @apply !bg-blue-500 hover:!bg-blue-600 !text-white;
+  @apply shadow-[0_0_15px_rgba(56,189,248,0.3)];
   @apply text-sm py-1.5 px-3;
 }
 
@@ -995,36 +711,21 @@
   overflow: hidden;
   background: linear-gradient(
     to bottom right,
-    rgba(130, 200, 255, 0.9),
-    rgba(70, 160, 240, 0.8)
-  );
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 4px 15px rgba(70, 160, 240, 0.3);
-  color: rgba(10, 50, 80, 0.9);
-  transition: all 0.3s ease;
-  font-size: 0.875rem;
-  padding: 0.4rem 0.75rem;
-  height: auto;
-}
-
-.dark .glass-button {
-  background: linear-gradient(
-    to bottom right,
     rgba(70, 150, 240, 0.8),
     rgba(40, 120, 220, 0.7)
   );
   border: 1px solid rgba(120, 200, 255, 0.3);
   box-shadow: 0 4px 15px rgba(20, 80, 150, 0.5);
   color: rgba(230, 245, 255, 0.95);
+  transition: all 0.3s ease;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.75rem;
+  height: auto;
 }
 
-/* Restore button hover effects */
+/* Button hover effects */
 .glass-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(70, 160, 240, 0.4);
-}
-
-.dark .glass-button:hover {
   box-shadow: 0 6px 20px rgba(0, 40, 80, 0.5), 0 0 15px rgba(56, 189, 248, 0.3);
 }
 
@@ -1075,14 +776,8 @@ h3,
 
 /* Make dialog interfaces more compact */
 .dialog-content {
-  --dialog-bg-opacity-light: 0.85;
-  --dialog-bg-opacity-dark: 0.9;
-  background-color: rgba(255, 255, 255, var(--dialog-bg-opacity-light));
-  color: rgba(15, 23, 42, 0.95); /* text-slate-900 with higher opacity */
-}
-
-.dark .dialog-content {
-  background-color: rgba(10, 38, 66, var(--dialog-bg-opacity-dark));
+  --dialog-bg-opacity: 0.9;
+  background-color: rgba(10, 38, 66, var(--dialog-bg-opacity));
   color: rgba(226, 232, 240, 0.95); /* text-slate-200 with higher opacity */
 }
 
@@ -1210,18 +905,10 @@ html.maximized #root {
 
 /* Text color utilities */
 .text-foreground {
-  color: rgba(15, 23, 42, 0.95) !important; /* Darker for better contrast */
-}
-
-.dark .text-foreground {
   color: rgba(241, 245, 249, 0.98) !important; /* Lighter for better contrast */
 }
 
 .text-primary {
-  color: var(--primary) !important;
-}
-
-.dark .text-primary {
   color: var(--primary) !important;
 }
 
@@ -1238,23 +925,10 @@ html.maximized #root {
 }
 
 .text-muted {
-  color: rgba(71, 85, 105, 0.95) !important;
-}
-
-.dark .text-muted {
   color: rgba(203, 213, 225, 0.95) !important;
 }
 
 .text-muted-foreground {
-  color: rgba(
-    71,
-    85,
-    105,
-    0.9
-  ) !important; /* text-slate-600 with higher opacity */
-}
-
-.dark .text-muted-foreground {
   color: rgba(
     148,
     163,
@@ -1315,14 +989,6 @@ h6 {
 /* Add glowing highlight to selected elements */
 .glass-selected {
   position: relative;
-}
-
-:root:not(.dark) .glass-selected {
-  box-shadow: 0 0 15px rgba(100, 180, 255, 0.3);
-  border-color: rgba(100, 180, 255, 0.4) !important;
-}
-
-.dark .glass-selected {
   box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
   border-color: rgba(56, 189, 248, 0.5) !important;
 }
@@ -1339,20 +1005,12 @@ h6 {
   inset: 0;
   background: radial-gradient(
     ellipse at center,
-    rgba(140, 200, 255, 0.15) 0%,
+    rgba(56, 189, 248, 0.15) 0%,
     transparent 70%
   );
   pointer-events: none;
   opacity: 0;
   animation: dialog-glow 10s infinite ease-in-out alternate;
-}
-
-.dark .glass-dialog::before {
-  background: radial-gradient(
-    ellipse at center,
-    rgba(56, 189, 248, 0.15) 0%,
-    transparent 70%
-  );
 }
 
 @keyframes dialog-glow {
@@ -1383,7 +1041,7 @@ h6 {
   position: fixed !important;
   inset: 0 !important;
   background-color: rgba(0, 20, 40, 0.6) !important;
-  backdrop-filter: blur(8px) !important;
+  backdrop-filter: none !important;
 }
 
 /* Make sure dialog content is scrollable if it exceeds the max height */
@@ -1420,35 +1078,21 @@ h6 {
 
 /* Add glowing ripple effect to focused inputs */
 .glass-input {
-  background-color: rgba(240, 250, 255, 0.4);
-  border: 1px solid rgba(200, 230, 255, 0.5);
-  box-shadow: 0 2px 6px rgba(140, 190, 240, 0.1);
+  background-color: rgba(10, 30, 60, 0.5);
+  border: 1px solid rgba(40, 100, 160, 0.35);
+  box-shadow: 0 2px 6px rgba(0, 20, 40, 0.2);
   transition: background 0.2s, border 0.2s, box-shadow 0.2s;
   box-sizing: border-box; /* Ensure consistent sizing */
 }
 
-.dark .glass-input {
-  background-color: rgba(10, 30, 60, 0.5);
-  border: 1px solid rgba(40, 100, 160, 0.35);
-  box-shadow: 0 2px 6px rgba(0, 20, 40, 0.2);
-}
-
 .glass-input:focus {
-  background-color: rgba(240, 250, 255, 0.5);
-  border-color: rgba(100, 180, 255, 0.6);
-  box-shadow: 0 0 0 1px rgba(100, 180, 255, 0.25),
-    0 4px 10px rgba(100, 180, 255, 0.15);
-  position: relative;
-  outline: none;
-  box-sizing: border-box; /* Ensure consistent sizing */
-}
-
-.dark .glass-input:focus {
   background-color: rgba(15, 40, 70, 0.5);
   border-color: rgba(56, 189, 248, 0.5);
   box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3),
     0 4px 10px rgba(20, 60, 120, 0.3);
+  position: relative;
   outline: none;
+  box-sizing: border-box; /* Ensure consistent sizing */
 }
 
 .glass-input:focus::after {
@@ -1458,19 +1102,11 @@ h6 {
   border-radius: inherit; /* Use the same border radius as the input */
   background: radial-gradient(
     circle at center,
-    rgba(140, 200, 255, 0.3) 0%,
+    rgba(56, 189, 248, 0.25) 0%,
     transparent 70%
   );
   opacity: 0;
   animation: input-focus-glow 2s infinite ease-in-out;
-}
-
-.dark .glass-input:focus::after {
-  background: radial-gradient(
-    circle at center,
-    rgba(56, 189, 248, 0.25) 0%,
-    transparent 70%
-  );
 }
 
 @keyframes input-focus-glow {
@@ -1487,7 +1123,7 @@ h6 {
 
 /* Label styling with theme variables */
 .glass-label {
-  color: rgba(15, 23, 42, 0.95);
+  color: rgba(226, 232, 240, 0.98);
   font-weight: 500;
 }
 
@@ -1510,20 +1146,12 @@ h6 {
   inset: 0;
   background: radial-gradient(
     ellipse at center,
-    rgba(140, 200, 255, 0.15) 0%,
+    rgba(56, 189, 248, 0.15) 0%,
     transparent 70%
   );
   pointer-events: none;
   opacity: 0;
   animation: dialog-glow 10s infinite ease-in-out alternate;
-}
-
-.dark [data-slot="dialog-content"]::before {
-  background: radial-gradient(
-    ellipse at center,
-    rgba(56, 189, 248, 0.15) 0%,
-    transparent 70%
-  );
 }
 
 /* Glass glow accent for dialog headers and footers */
@@ -1542,7 +1170,7 @@ h6 {
 /* Add more glowing to dialog overlay */
 [data-slot="dialog-overlay"] {
   background-color: rgba(0, 40, 80, 0.3) !important;
-  backdrop-filter: blur(8px) !important;
+  backdrop-filter: none !important;
 }
 
 /* Animations */
@@ -1559,7 +1187,7 @@ h6 {
 }
 
 .water-wave-animation {
-  @apply bg-linear-to-r/oklch from-blue-400/40 via-teal-400/40 to-blue-400/40 dark:from-blue-500/40 dark:via-teal-500/40 dark:to-blue-500/40;
+  @apply bg-linear-to-r/oklch from-blue-500/40 via-teal-500/40 to-blue-500/40;
   @apply bg-[size:200%_100%];
   animation: waterWave 3s ease infinite;
   will-change: background-position;
@@ -1574,61 +1202,32 @@ h6 {
   will-change: transform;
 }
 
-/* Caustics Effect */
-.caustics {
-  @apply after:absolute after:inset-0 after:bg-[url('/caustics.png')] after:bg-cover after:opacity-30;
-  @apply after:mix-blend-overlay;
-  @apply after:will-change-transform;
-}
 
-.caustics::after {
-  animation: waterWave 10s ease infinite;
-}
-
-/* Enhanced dialog styling for dark mode */
-.dark .dialog-content {
-  background: var(--dialog-bg-dark);
-  border: 1px solid var(--dialog-border-dark);
+/* Enhanced dialog styling */
+.dialog-content {
+  background: rgba(10, 38, 66, 0.9);
+  border: 1px solid rgba(40, 80, 120, 0.2);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 2px 20px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(60, 120, 180, 0.1) inset;
 }
 
 /* Glass backgrounds with improved contrast */
 .glass-surface {
-  --surface-bg-opacity-light: 0.8;
-  --surface-text-shadow-light: 0 0 1px rgba(255, 255, 255, 0.5);
-  background-color: rgba(255, 255, 255, var(--surface-bg-opacity-light));
-  backdrop-filter: blur(8px);
-}
-
-.dark .glass-surface {
-  --surface-bg-opacity-dark: 0.85;
-  --surface-text-shadow-dark: 0 0 1px rgba(0, 0, 0, 0.5);
-  background-color: rgba(10, 30, 58, var(--surface-bg-opacity-dark));
+  --surface-bg-opacity: 0.85;
+  --surface-text-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
+  background-color: rgba(10, 30, 58, var(--surface-bg-opacity));
   backdrop-filter: blur(8px);
 }
 
 .glass-deep {
-  --deep-bg-opacity-light: 0.85;
-  background-color: rgba(240, 249, 255, var(--deep-bg-opacity-light));
-  backdrop-filter: blur(10px);
-}
-
-.dark .glass-deep {
-  --deep-bg-opacity-dark: 0.9;
-  background-color: rgba(10, 38, 66, var(--deep-bg-opacity-dark));
+  --deep-bg-opacity: 0.9;
+  background-color: rgba(10, 38, 66, var(--deep-bg-opacity));
   backdrop-filter: blur(10px);
 }
 
 .glass-abyss {
-  --abyss-bg-opacity-light: 0.9;
-  background-color: rgba(236, 246, 255, var(--abyss-bg-opacity-light));
-  backdrop-filter: blur(12px);
-}
-
-.dark .glass-abyss {
-  --abyss-bg-opacity-dark: 0.92;
-  background-color: rgba(10, 30, 54, var(--abyss-bg-opacity-dark));
+  --abyss-bg-opacity: 0.92;
+  background-color: rgba(10, 30, 54, var(--abyss-bg-opacity));
   backdrop-filter: blur(12px);
 }
 
@@ -1657,36 +1256,8 @@ h6 {
 .glass-abyss h4,
 .glass-abyss h5,
 .glass-abyss h6 {
-  color: rgba(15, 23, 42, 0.95); /* text-slate-900 with higher opacity */
-  text-shadow: var(--surface-text-shadow-light);
-}
-
-.dark .glass h1,
-.dark .glass h2,
-.dark .glass h3,
-.dark .glass h4,
-.dark .glass h5,
-.dark .glass h6,
-.dark .glass-surface h1,
-.dark .glass-surface h2,
-.dark .glass-surface h3,
-.dark .glass-surface h4,
-.dark .glass-surface h5,
-.dark .glass-surface h6,
-.dark .glass-deep h1,
-.dark .glass-deep h2,
-.dark .glass-deep h3,
-.dark .glass-deep h4,
-.dark .glass-deep h5,
-.dark .glass-deep h6,
-.dark .glass-abyss h1,
-.dark .glass-abyss h2,
-.dark .glass-abyss h3,
-.dark .glass-abyss h4,
-.dark .glass-abyss h5,
-.dark .glass-abyss h6 {
   color: rgba(226, 232, 240, 0.98); /* text-slate-200 with higher opacity */
-  text-shadow: var(--surface-text-shadow-dark);
+  text-shadow: var(--surface-text-shadow);
 }
 
 /* Paragraph text contrast improvement */
@@ -1698,68 +1269,28 @@ h6 {
 .glass-surface .text-sm,
 .glass-deep .text-sm,
 .glass-abyss .text-sm {
-  color: rgba(
-    15,
-    23,
-    42,
-    0.9
-  ); /* text-slate-900 with slightly higher opacity */
-}
-
-.dark .glass p,
-.dark .glass-surface p,
-.dark .glass-deep p,
-.dark .glass-abyss p,
-.dark .glass .text-sm,
-.dark .glass-surface .text-sm,
-.dark .glass-deep .text-sm,
-.dark .glass-abyss .text-sm {
   color: rgba(203, 213, 225, 0.98); /* text-slate-300 with higher opacity */
 }
 
 /* Improved dialog content text contrast */
 [data-slot="dialog-content"] {
-  color: rgba(15, 23, 42, 0.95);
-}
-
-.dark [data-slot="dialog-content"] {
   color: rgba(226, 232, 240, 0.98);
 }
 
 /* Improved contrast for dialog headers */
 [data-slot="dialog-title"] {
-  color: rgba(15, 23, 42, 1);
-  font-weight: 600;
-}
-
-.dark [data-slot="dialog-title"] {
   color: rgba(241, 245, 249, 1);
   font-weight: 600;
 }
 
 /* Enhanced contrast for form labels */
 .glass-label {
-  color: rgba(15, 23, 42, 0.95);
-  font-weight: 500;
-}
-
-.dark .glass-label {
   color: rgba(226, 232, 240, 0.98);
   font-weight: 500;
 }
 
 /* Improved placeholder text visibility */
 ::placeholder {
-  color: rgba(
-    71,
-    85,
-    105,
-    0.8
-  ) !important; /* text-slate-600 with high opacity */
-  opacity: 1;
-}
-
-.dark ::placeholder {
   color: rgba(
     148,
     163,
@@ -1771,43 +1302,30 @@ h6 {
 
 /* Style focused placeholders */
 :focus::placeholder {
-  color: rgba(71, 85, 105, 0.9) !important;
-  opacity: 1;
-}
-
-.dark :focus::placeholder {
   color: rgba(148, 163, 184, 0.95) !important;
   opacity: 1;
 }
 
-/* Dialog close button styling with bioluminescence in dark mode */
+/* Dialog close button styling with bioluminescence */
 .dialog-close-button {
   transition: all 0.2s ease;
   position: relative;
-}
-
-.dialog-close-button:hover {
-  background-color: rgba(226, 232, 240, 0.1);
-}
-
-/* Dark mode bioluminescent effect */
-.dark .dialog-close-button {
   color: rgba(226, 232, 240, 0.8);
   overflow: hidden;
 }
 
-.dark .dialog-close-button:hover {
+.dialog-close-button:hover {
   color: rgba(226, 232, 240, 1);
   background-color: rgba(56, 189, 248, 0.15);
   box-shadow: 0 0 5px 1px rgba(56, 189, 248, 0.25),
     0 0 3px rgba(56, 189, 248, 0.1) inset;
 }
 
-.dark .dialog-close-button:hover svg {
+.dialog-close-button:hover svg {
   filter: drop-shadow(0 0 1px rgba(56, 189, 248, 0.7));
 }
 
-.dark .dialog-close-button::before {
+.dialog-close-button::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -1821,7 +1339,7 @@ h6 {
   border-radius: inherit;
 }
 
-.dark .dialog-close-button:hover::before {
+.dialog-close-button:hover::before {
   opacity: 0.5;
   animation: pulse-glow 2s infinite ease-in-out;
 }
@@ -1888,5 +1406,171 @@ h6 {
     background-position: 100% 100%;
     opacity: 0.5;
     transform: translateZ(0);
+  }
+}
+
+/* Performance optimization classes */
+.paused-animations * {
+  animation-play-state: paused !important;
+}
+
+/* Apply reduced blur and animation effects for users who prefer reduced motion */
+.reduced-motion * {
+  backdrop-filter: blur(5px) !important; /* Reduce blur intensity */
+  animation-duration: 0s !important; /* Disable animations */
+  transition-duration: 0.2s !important; /* Only allow very quick transitions */
+}
+
+.reduced-motion .underwater-particles {
+  display: none !important; /* Completely disable particles */
+}
+
+.reduced-motion .water-pattern {
+  display: none !important;
+}
+
+.reduced-motion .glass {
+  backdrop-filter: blur(3px) !important; /* Reduce blur for all glass elements */
+}
+
+.reduced-motion .glass-surface,
+.reduced-motion .glass-deep,
+.reduced-motion .glass-abyss {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2) !important; /* Simplify shadows */
+}
+
+/* Optimize underwater particles for performance by hiding if window not in focus */
+.paused-animations .underwater-particles {
+  will-change: auto !important; /* Release GPU memory when paused */
+  transition: none !important;
+}
+
+/* Performance optimized particles container */
+.underwater-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -6;
+  contain: strict; /* Improve performance by containing layout/paint */
+  will-change: transform, opacity; /* Hint to browser to optimize */
+  transform: translate3d(0,0,0);
+  isolation: isolate;
+}
+
+/* When tab is not focused, disable expensive blur effects */
+.paused-animations .glass,
+.paused-animations .glass-surface,
+.paused-animations .glass-deep, 
+.paused-animations .glass-abyss {
+  backdrop-filter: none !important;
+  transform: none !important;
+}
+
+/* Optimize performance for particles */
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.5);
+  filter: blur(1px);
+  pointer-events: none;
+  transform-origin: center;
+  animation: float-particle var(--particle-duration, 60s) infinite;
+  will-change: transform; /* Add hardware acceleration */
+  transform: translateZ(0); /* Force GPU rendering */
+}
+
+/* Reduce performance impact of glassmorphism effects */
+.glass {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(var(--glass-blur));
+  color: var(--foreground);
+}
+
+/* Optimize for devices with lower GPU capabilities */
+@media (max-width: 768px) {
+  .underwater-particles {
+    display: none; /* Disable particles on mobile */
+  }
+  
+  .glass,
+  .glass-surface,
+  .glass-deep,
+  .glass-abyss {
+    backdrop-filter: blur(5px) !important; /* Reduce blur on mobile */
+  }
+  
+  .glass-bioluminescent::before,
+  .glass-bioluminescent::after,
+  .glass-ripple::before,
+  .glass-noise::after,
+  .glass-current::before,
+  .glass-current::after {
+    display: none !important; /* Disable expensive effects on mobile */
+  }
+}
+
+/* Hardware acceleration for critical elements */
+.hw-accelerated {
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
+  perspective: 1000px;
+  contain: content;
+}
+
+/* These rules ensure the app background works with transparent windows on all platforms */
+html, body {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* For platforms that don't support transparency, ensure a consistent color */
+.app-root {
+  /* Default for Windows/Linux - will be overridden for Mac */
+  background-color: var(--platform-background-solid);
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Ensure the app background adapts to the transparent window setting */
+@supports (-webkit-backdrop-filter: none) or (backdrop-filter: none) {
+  html, body {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+  
+  .app-background {
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+  
+  /* For Webkit browsers (Mac primarily) */
+  .app-root {
+    background-color: transparent !important;
+  }
+}
+
+/* New bioluminescent text glow for search button */
+.shadow-glow {
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.7),
+               0 0 15px rgba(120, 210, 255, 0.85),
+               0 0 25px rgba(80, 165, 255, 0.5);
+  animation: glow-pulse 3s infinite alternate ease-in-out;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+}
+
+@keyframes glow-pulse {
+  0% {
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.7),
+                 0 0 15px rgba(120, 210, 255, 0.85),
+                 0 0 25px rgba(80, 165, 255, 0.5);
+  }
+  100% {
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
+                 0 0 20px rgba(120, 210, 255, 0.95),
+                 0 0 30px rgba(80, 165, 255, 0.7);
   }
 }

@@ -25,8 +25,8 @@ export function DeepDiveView() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h1 className="text-2xl font-heading font-bold text-blue-900 dark:text-blue-50 mb-2">Deep Dive</h1>
-          <p className="text-blue-800/80 dark:text-blue-200/90 text-base">
+          <h1 className="text-2xl font-heading font-bold text-blue-50 mb-2">Deep Dive</h1>
+          <p className="text-blue-200/90 text-base">
             Collect, process, and organize documentation for your technologies
           </p>
         </motion.header>
@@ -96,7 +96,7 @@ export function DeepDiveView() {
                 withCurrent
               >
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <h3 className="text-xl font-medium mb-3 text-blue-900 dark:text-blue-100">Select a Technology to Begin</h3>
+                  <h3 className="text-xl font-medium mb-3 text-blue-100">Select a Technology to Begin</h3>
                   <p className="text-muted-foreground max-w-lg text-sm mb-5">
                     Choose a technology and version from the sidebar to start your deep dive, or create a new one if you're just getting started
                   </p>

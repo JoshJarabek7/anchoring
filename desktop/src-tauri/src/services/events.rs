@@ -89,7 +89,6 @@ pub struct UrlStatusUpdatedEvent {
     pub status: String,
 }
 
-
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppNotificationEvent {
@@ -156,16 +155,6 @@ impl EventEmitter {
         )
     }
 
-    pub fn emit_task_failed(&self, task_id: &str, error: &str) -> Result<(), tauri::Error> {
-        self.app_handle.emit(
-            "task:failed",
-            TaskFailedEvent {
-                task_id: task_id.to_string(),
-                error: error.to_string(),
-            },
-        )
-    }
-
     pub fn emit_task_error(&self, task_id: &str, error: &str) -> Result<(), tauri::Error> {
         self.app_handle.emit(
             "task:error",
@@ -185,52 +174,52 @@ impl EventEmitter {
         )
     }
 
-    // Processing events
-    pub fn emit_processing_started(
-        &self,
-        task_id: &str,
-        url: Option<&str>,
-        tech_id: Option<&Uuid>,
-    ) -> Result<(), tauri::Error> {
-        self.app_handle.emit(
-            "processing:started",
-            ProcessingStartedEvent {
-                task_id: task_id.to_string(),
-                url: url.map(|s| s.to_string()),
-                tech_id: tech_id.map(|id| id.to_string()),
-            },
-        )
-    }
-
-    pub fn emit_processing_progress(
-        &self,
-        task_id: &str,
-        stage: &str,
-        progress: f32,
-    ) -> Result<(), tauri::Error> {
-        self.app_handle.emit(
-            "processing:progress",
-            ProcessingProgressEvent {
-                task_id: task_id.to_string(),
-                stage: stage.to_string(),
-                progress,
-            },
-        )
-    }
-
-    pub fn emit_processing_completed(
-        &self,
-        task_id: &str,
-        snippets_count: i32,
-    ) -> Result<(), tauri::Error> {
-        self.app_handle.emit(
-            "processing:completed",
-            ProcessingCompletedEvent {
-                task_id: task_id.to_string(),
-                snippets_count,
-            },
-        )
-    }
+    // Processing events - commented out as they're not currently used
+    // pub fn emit_processing_started(
+    //     &self,
+    //     task_id: &str,
+    //     url: Option<&str>,
+    //     tech_id: Option<&Uuid>,
+    // ) -> Result<(), tauri::Error> {
+    //     self.app_handle.emit(
+    //         "processing:started",
+    //         ProcessingStartedEvent {
+    //             task_id: task_id.to_string(),
+    //             url: url.map(|s| s.to_string()),
+    //             tech_id: tech_id.map(|id| id.to_string()),
+    //         },
+    //     )
+    // }
+    //
+    // pub fn emit_processing_progress(
+    //     &self,
+    //     task_id: &str,
+    //     stage: &str,
+    //     progress: f32,
+    // ) -> Result<(), tauri::Error> {
+    //     self.app_handle.emit(
+    //         "processing:progress",
+    //         ProcessingProgressEvent {
+    //             task_id: task_id.to_string(),
+    //             stage: stage.to_string(),
+    //             progress,
+    //         },
+    //     )
+    // }
+    //
+    // pub fn emit_processing_completed(
+    //     &self,
+    //     task_id: &str,
+    //     snippets_count: i32,
+    // ) -> Result<(), tauri::Error> {
+    //     self.app_handle.emit(
+    //         "processing:completed",
+    //         ProcessingCompletedEvent {
+    //             task_id: task_id.to_string(),
+    //             snippets_count,
+    //         },
+    //     )
+    // }
 
     // URL events
     pub fn emit_url_status_updated(&self, url_id: &Uuid, status: &str) -> Result<(), tauri::Error> {

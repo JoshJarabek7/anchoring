@@ -2,7 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Function to automatically update updated_at timestamp
+-- Function to auto-update the updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -11,7 +11,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create technologies table
+-- Technologies table
 CREATE TABLE technologies (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
@@ -21,13 +21,12 @@ CREATE TABLE technologies (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create trigger for technologies updated_at
 CREATE TRIGGER set_technologies_updated_at
 BEFORE UPDATE ON technologies
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
--- Create technology_versions table
+-- Technology Versions table
 CREATE TABLE technology_versions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   technology_id UUID NOT NULL REFERENCES technologies(id) ON DELETE CASCADE,
@@ -36,13 +35,12 @@ CREATE TABLE technology_versions (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create trigger for technology_versions updated_at
 CREATE TRIGGER set_technology_versions_updated_at
 BEFORE UPDATE ON technology_versions
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
--- Create documentation_urls table
+-- Documentation URLs table
 CREATE TABLE documentation_urls (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   technology_id UUID NOT NULL REFERENCES technologies(id) ON DELETE CASCADE,
@@ -57,13 +55,12 @@ CREATE TABLE documentation_urls (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create trigger for documentation_urls updated_at
 CREATE TRIGGER set_documentation_urls_updated_at
 BEFORE UPDATE ON documentation_urls
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
--- Create documentation_snippets table
+-- Documentation Snippets table
 CREATE TABLE documentation_snippets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title TEXT NOT NULL,
@@ -77,28 +74,27 @@ CREATE TABLE documentation_snippets (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create trigger for documentation_snippets updated_at
 CREATE TRIGGER set_documentation_snippets_updated_at
 BEFORE UPDATE ON documentation_snippets
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
--- Create documentation_embeddings table
+-- Documentation Embeddings table (full precision vectors)
 CREATE TABLE documentation_embeddings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   snippet_id UUID NOT NULL REFERENCES documentation_snippets(id) ON DELETE CASCADE,
-  embedding vector(2000) NOT NULL,
+  embedding vector(2000) NOT NULL, -- single-precision (4-byte floats)
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create proxies table
+-- Proxies table
 CREATE TABLE proxies (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   url TEXT NOT NULL UNIQUE,
   last_used TIMESTAMP
 );
 
--- Create crawling_settings table
+-- Crawling Settings table
 CREATE TABLE crawling_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   version_id UUID NOT NULL REFERENCES technology_versions(id) ON DELETE CASCADE,
@@ -106,16 +102,16 @@ CREATE TABLE crawling_settings (
   anti_paths TEXT,
   anti_keywords TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT unique_version_crawling_settings UNIQUE (version_id)
 );
 
--- Create trigger for crawling_settings updated_at
 CREATE TRIGGER set_crawling_settings_updated_at
 BEFORE UPDATE ON crawling_settings
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
--- Create language_options table
+-- Language Options table
 CREATE TABLE language_options (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   language TEXT NOT NULL UNIQUE,
@@ -123,7 +119,7 @@ CREATE TABLE language_options (
   last_used TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create indexes
+-- Indexes for efficient querying
 CREATE INDEX idx_tech_versions_tech_id ON technology_versions(technology_id);
 CREATE INDEX idx_doc_urls_tech_id ON documentation_urls(technology_id);
 CREATE INDEX idx_doc_urls_version_id ON documentation_urls(version_id);
@@ -133,6 +129,7 @@ CREATE INDEX idx_doc_snippets_version_id ON documentation_snippets(version_id);
 CREATE INDEX idx_doc_snippets_source_url ON documentation_snippets(source_url);
 CREATE INDEX idx_doc_embeddings_snippet_id ON documentation_embeddings(snippet_id);
 
--- Create HNSW index for high accuracy vector search
-CREATE INDEX documentation_embeddings_embedding_idx ON documentation_embeddings 
-USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 200);
+-- HNSW index for vector search
+CREATE INDEX documentation_embeddings_embedding_idx ON documentation_embeddings
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 200);

@@ -1,6 +1,5 @@
 use crate::db::models::{DocumentationUrl, UrlStatus};
 use crate::db::models::{Technology, TechnologyVersion};
-use crate::db::repositories::documentation::DocumentationRepository;
 use crate::db::repositories::documentation_url::DocumentationUrlRepository;
 use crate::db::repositories::technologies::TechnologyRepository;
 use crate::db::repositories::versions::VersionRepository;
@@ -18,7 +17,6 @@ use uuid::Uuid;
 pub struct DocumentationUrlService {
     tech_repository: TechnologyRepository,
     version_repository: VersionRepository,
-    doc_repository: DocumentationRepository,
     url_repository: DocumentationUrlRepository,
 }
 
@@ -34,7 +32,6 @@ impl DocumentationUrlService {
         Self {
             tech_repository: TechnologyRepository::new(),
             version_repository: VersionRepository::new(),
-            doc_repository: DocumentationRepository::new(),
             url_repository: DocumentationUrlRepository::new(),
         }
     }
@@ -97,33 +94,6 @@ impl DocumentationUrlService {
             .create(&doc_url)
             .await
             .map_err(|e| format!("Error creating documentation URL: {}", e))
-    }
-
-    /// Get all URLs for a specific technology
-    pub async fn get_urls_for_technology(
-        &self,
-        technology_id: Uuid,
-        include_content: bool,
-    ) -> Result<Vec<DocumentationUrl>, String> {
-        // Check if technology exists
-        let tech = self
-            .tech_repository
-            .get_by_id(technology_id)
-            .await
-            .map_err(|e| format!("Error fetching technology: {}", e))?;
-
-        if tech.is_none() {
-            return Err(format!(
-                "Technology with ID {} does not exist",
-                technology_id
-            ));
-        }
-
-        // Get URLs from repository
-        self.url_repository
-            .get_by_technology(technology_id, include_content)
-            .await
-            .map_err(|e| format!("Error fetching documentation URLs: {}", e))
     }
 
     /// Get all URLs for a specific version
@@ -278,19 +248,6 @@ impl DocumentationUrlService {
             .map_err(|e| format!("Error updating URL markdown content: {}", e))
     }
 
-    /// Get URLs by status
-    pub async fn get_urls_by_status(
-        &self,
-        technology_id: Option<Uuid>,
-        version_id: Option<Uuid>,
-        status: UrlStatus,
-    ) -> Result<Vec<DocumentationUrl>, String> {
-        self.url_repository
-            .get_by_status(technology_id, version_id, &String::from(status), false)
-            .await
-            .map_err(|e| format!("Error fetching documentation URLs by status: {}", e))
-    }
-
     /// Get the technology and version for a documentation URL
     pub async fn get_tech_and_version_for_url(
         &self,
@@ -319,5 +276,18 @@ impl DocumentationUrlService {
             .ok_or_else(|| format!("Version with ID {} does not exist", url.version_id))?;
 
         Ok((technology, version))
+    }
+
+    pub async fn delete_url(&self, url_id: Uuid) -> Result<(), String> {
+        let url = self
+            .get_url_by_id(url_id)
+            .await?
+            .ok_or_else(|| format!("Documentation URL with ID {} does not exist", url_id))?;
+
+        self.url_repository
+            .delete(url.id)
+            .await
+            .map_err(|e| format!("Error deleting URL: {}", e))?;
+        Ok(())
     }
 }

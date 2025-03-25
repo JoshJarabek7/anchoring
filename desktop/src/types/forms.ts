@@ -17,10 +17,3 @@ export const crawlerSettingsFormSchema = z.object({
 });
 
 export type CrawlerSettingsValues = z.infer<typeof crawlerSettingsFormSchema>;
-
-/**
- * Crawler URL form schema
- */
-export const urlFormSchema = z.object({
-  url: z.string().url("Must be a valid URL")
-});

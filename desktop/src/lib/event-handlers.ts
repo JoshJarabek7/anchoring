@@ -3,10 +3,170 @@ import { useTechnologyStore } from '@/stores/technology-store';
 import { useUrlStore } from '@/stores/url-store';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
+import { workerService } from './worker-service';
 
 // Create unlisten functions holder to properly clean up listeners
 // Type is correct for Tauri v2 unlisten functions
 const unlistenFunctions: Array<() => void> = [];
+
+// Event buffering for batch processing
+interface BufferedEvent {
+  type: string;
+  payload: any;
+}
+
+let eventBuffer: BufferedEvent[] = [];
+let flushTimeout: ReturnType<typeof setTimeout> | null = null;
+const BUFFER_FLUSH_INTERVAL = 50; // ms
+
+/**
+ * Flush buffered events to the worker for batch processing
+ */
+function flushEventBuffer() {
+  if (eventBuffer.length === 0) return;
+  
+  // Clone the buffer and clear it
+  const eventsToProcess = [...eventBuffer];
+  eventBuffer = [];
+  
+  // Send to worker for processing
+  workerService.sendMessage('PROCESS_EVENTS', { events: eventsToProcess }, (processedEvents) => {
+    // Process the optimized events
+    processedEvents.forEach(event => {
+      const { type } = event;
+      
+      // Apply state updates based on event type
+      if (type.startsWith('task:')) {
+        handleTaskEvent(event);
+      } else if (type.startsWith('url:')) {
+        handleUrlEvent(event);
+      } else if (type.startsWith('tech:')) {
+        handleTechEvent(event);
+      } else if (type.startsWith('processing:')) {
+        handleProcessingEvent(event);
+      }
+    });
+  });
+}
+
+/**
+ * Add event to buffer and schedule flush
+ */
+function bufferEvent(type: string, payload: any) {
+  eventBuffer.push({ type, payload });
+  
+  if (!flushTimeout) {
+    flushTimeout = setTimeout(() => {
+      flushEventBuffer();
+      flushTimeout = null;
+    }, BUFFER_FLUSH_INTERVAL);
+  }
+  
+  // If buffer gets too large, flush immediately
+  if (eventBuffer.length > 100) {
+    if (flushTimeout) {
+      clearTimeout(flushTimeout);
+      flushTimeout = null;
+    }
+    flushEventBuffer();
+  }
+}
+
+/**
+ * Handle task events (processed by worker)
+ */
+function handleTaskEvent(event: any) {
+  const { taskId, status, progress, stages } = event;
+  if (!taskId) return;
+  
+  const taskStore = useTaskStore.getState();
+  
+  // Apply appropriate action based on event subtype
+  if (event.type === 'task:created') {
+    // Add new task
+    const minimalTask = {
+      id: taskId,
+      taskType: event.taskType,
+      status: 'queued' as TaskStatus,
+      progress: 0,
+      payload: event.metadata,
+      createdAt: new Date().toISOString(),
+      createdDate: new Date()
+    };
+    taskStore.addTask(minimalTask);
+  } else if (event.type === 'task:updated') {
+    // Update task progress - ensure we're using the right status value
+    const taskStatus = status || 'running';
+    taskStore.updateTaskProgress(taskId, progress, taskStatus as TaskStatus, stages);
+  } else if (event.type === 'task:completed') {
+    // Mark task as completed with 100% progress
+    taskStore.updateTaskProgress(taskId, 100, 'completed', stages);
+  } else if (event.type === 'task:failed' || event.type === 'task:error') {
+    // Mark task as failed with current progress
+    taskStore.updateTaskProgress(taskId, progress || 0, 'failed', stages);
+  } else if (event.type === 'task:cancelled') {
+    // Mark task as cancelled with current progress
+    taskStore.updateTaskProgress(taskId, progress || 0, 'cancelled', stages);
+  }
+}
+
+/**
+ * Handle URL events (processed by worker)
+ */
+function handleUrlEvent(event: any) {
+  const { urlId, status } = event;
+  if (!urlId || !status) return;
+  
+  // Update URL status
+  useUrlStore.getState().updateUrlStatus(urlId, status as any);
+}
+
+/**
+ * Handle technology events (processed by worker)
+ */
+function handleTechEvent(event: any) {
+  const { techId, versionId } = event;
+  const techStore = useTechnologyStore.getState();
+  
+  if (event.type === 'tech:created' || event.type === 'tech:updated' || event.type === 'tech:deleted') {
+    // Refresh technologies list
+    techStore.fetchTechnologies();
+  } else if (event.type === 'tech:version:added' || event.type === 'tech:version:deleted') {
+    // If this is for the current technology, refresh versions
+    const selectedTech = techStore.selectedTechnology;
+    if (selectedTech && selectedTech.id === techId) {
+      techStore.fetchVersions(techId);
+    }
+  }
+}
+
+/**
+ * Handle processing events (processed by worker)
+ */
+function handleProcessingEvent(event: any) {
+  const { taskId, stage, progress } = event;
+  if (!taskId) return;
+  
+  // For progress events, update task with stage information
+  if (event.type === 'processing:progress' && stage) {
+    const taskStore = useTaskStore.getState();
+    const tasks = taskStore.tasks;
+    const task = tasks.find(t => t.id === taskId);
+    
+    if (task) {
+      // Use worker to calculate progress
+      workerService.sendMessage('CALCULATE_PROGRESS', { task }, (result) => {
+        // Update task with optimized stages and progress
+        taskStore.updateTaskProgress(
+          taskId, 
+          result.progress, 
+          result.status as TaskStatus,
+          task.stages // Keep existing stages
+        );
+      });
+    }
+  }
+}
 
 /**
  * Set up event listeners for Tauri events
@@ -22,15 +182,14 @@ export async function setupEventListeners() {
     // Keep track of processed task IDs to prevent double-processing
     const processedTaskIds = new Set<string>();
     
-    // Task Events
+    // Task Events - Use worker for better performance
     const taskCreated = await listen<{ taskId: string, taskType: string, metadata: string }>('task:created', (event) => {
       try {
-        // Skip if this task was already processed
         if (!event.payload || !event.payload.taskId) return;
         
         const taskId = event.payload.taskId;
         if (processedTaskIds.has(taskId)) {
-          console.log(`Task ${taskId} already processed, skipping duplicate event`);
+          console.log(`⚠️ Task ${taskId} already processed, skipping duplicate event`);
           return;
         }
         
@@ -42,13 +201,19 @@ export async function setupEventListeners() {
           ? JSON.parse(event.payload.metadata) 
           : event.payload.metadata;
         
-        console.log('Task created:', {
-          taskId: taskId,
+        // Only log task creation for certain task types to reduce noise
+        if (event.payload.taskType === 'crawl_url') {
+          console.log(`📋 TASK CREATED: ${event.payload.taskType} - ${taskId.substring(0, 8)}...`);
+        }
+        
+        // Use buffer and worker for optimal state updates
+        bufferEvent('task:created', {
+          taskId,
           taskType: event.payload.taskType,
-          metadata
+          metadata,
         });
         
-        // Add a minimal task to the store immediately with 'queued' status
+        // Still add minimal task immediately to show responsiveness in the UI
         const minimalTask = {
           id: taskId,
           taskType: event.payload.taskType,
@@ -58,20 +223,23 @@ export async function setupEventListeners() {
           createdAt: new Date().toISOString(),
           createdDate: new Date()
         };
-        
-        // Add the minimal task to show immediately in the queue
         getTaskStore().addTask(minimalTask);
         
-        // Also fetch the full task data from the backend
+        // Fetch full task data in background
         getTaskStore().getTask(taskId).then(fullTask => {
           if (fullTask) {
-            // Update with complete task data when available
-            getTaskStore().updateTaskProgress(
-              fullTask.id, 
-              fullTask.progress, 
-              fullTask.status,
-              fullTask.stages
-            );
+            // Use worker to process task data efficiently
+            workerService.sendMessage('PROCESS_TASKS', { tasks: [fullTask] }, (processedTasks) => {
+              if (processedTasks && processedTasks[0]) {
+                const processed = processedTasks[0];
+                getTaskStore().updateTaskProgress(
+                  processed.id, 
+                  processed.progress, 
+                  processed.status,
+                  processed.stages
+                );
+              }
+            });
           }
         });
       } catch (error) {
@@ -83,24 +251,24 @@ export async function setupEventListeners() {
     const taskUpdated = await listen<{ taskId: string, progress: number, status: string }>('task:updated', (event) => {
       if (!event.payload || !event.payload.taskId) return;
       
-      console.log(`Task ${event.payload.taskId} progress: ${event.payload.progress}%`);
-      
-      // Map backend status to frontend TaskStatus
-      let taskStatus: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-      
-      // Handle core status types
-      if (['queued', 'running', 'completed', 'failed', 'cancelled'].includes(event.payload.status)) {
-        taskStatus = event.payload.status as any;
-      } else {
-        // Processing stages all map to 'running' for the overall task status
-        taskStatus = 'running';
+      // Only log significant progress updates to reduce noise
+      const progress = event.payload.progress;
+      if (progress === 0 || progress === 50 || progress === 100) {
+        console.log(`📊 TASK ${event.payload.taskId.substring(0, 8)}... progress: ${progress}%`);
       }
       
-      // Update the task progress in the store
+      // Buffer the event for batch processing
+      bufferEvent('task:updated', {
+        taskId: event.payload.taskId,
+        progress: event.payload.progress,
+        status: event.payload.status
+      });
+      
+      // Apply update directly as well, for immediate UI feedback
       getTaskStore().updateTaskProgress(
         event.payload.taskId,
         event.payload.progress,
-        taskStatus
+        event.payload.status as TaskStatus
       );
     });
     unlistenFunctions.push(taskUpdated);
@@ -108,102 +276,107 @@ export async function setupEventListeners() {
     const taskCompleted = await listen<{ taskId: string, result: any }>('task:completed', (event) => {
       if (!event.payload || !event.payload.taskId) return;
       
-      console.log('Task completed:', {
-        taskId: event.payload.taskId,
+      console.log('✅ TASK COMPLETED:', {
+        taskId: event.payload.taskId.substring(0, 8) + '...',
         result: event.payload.result
       });
       
-      // Update task status to completed
-      getTaskStore().updateTaskProgress(
-        event.payload.taskId,
-        100, // Set progress to 100%
-        'completed' as TaskStatus
-      );
-      
-      // Keep completed tasks in UI for 5 seconds before removing them
-      setTimeout(() => {
-        getTaskStore().removeTask(event.payload.taskId);
-      }, 5000);
+      // Buffer the event for batch processing
+      bufferEvent('task:completed', {
+        taskId: event.payload.taskId,
+        result: event.payload.result
+      });
     });
     unlistenFunctions.push(taskCompleted);
     
     const taskFailed = await listen<{ taskId: string, error: string }>('task:failed', (event) => {
       if (!event.payload) return;
       
-      console.error('Task failed:', {
-        taskId: event.payload.taskId,
+      console.error('❌ TASK FAILED:', {
+        taskId: event.payload.taskId.substring(0, 8) + '...',
         error: event.payload.error
       });
       
-      // Update task status to failed
-      getTaskStore().updateTaskProgress(
-        event.payload.taskId,
-        0, // Reset progress
-        'failed' as TaskStatus
-      );
-      
-      // Only show toast for critical errors, not individual task failures
-      // which would be too noisy with many tasks
-      
-      // Keep failed tasks for 10 seconds so user can see the failure
-      setTimeout(() => {
-        getTaskStore().removeTask(event.payload.taskId);
-      }, 10000);
+      // Buffer the event for batch processing
+      bufferEvent('task:failed', {
+        taskId: event.payload.taskId,
+        error: event.payload.error
+      });
     });
     unlistenFunctions.push(taskFailed);
     
     const taskError = await listen<{ taskId: string, error: string }>('task:error', (event) => {
       if (!event.payload) return;
       
-      console.error('Task error:', {
-        taskId: event.payload.taskId,
+      console.error('⛔ TASK ERROR:', {
+        taskId: event.payload.taskId.substring(0, 8) + '...',
         error: event.payload.error
       });
       
-      // Update task status to failed
-      getTaskStore().updateTaskProgress(
-        event.payload.taskId,
-        0, // Reset progress
-        'failed' as TaskStatus
-      );
-      
-      // No toast for individual task errors - too noisy with many tasks
-      
-      // Keep error tasks for 10 seconds so user can see the error
-      setTimeout(() => {
-        getTaskStore().removeTask(event.payload.taskId);
-      }, 10000);
+      // Buffer the event for batch processing
+      bufferEvent('task:error', {
+        taskId: event.payload.taskId,
+        error: event.payload.error
+      });
     });
     unlistenFunctions.push(taskError);
     
     const taskCancelled = await listen<{ taskId: string }>('task:cancelled', (event) => {
       if (!event.payload || !event.payload.taskId) return;
       
-      console.log('Task cancelled:', event.payload.taskId);
+      console.log('🚫 TASK CANCELLED:', event.payload.taskId.substring(0, 8) + '...');
       
-      // Remove the task from the store
-      getTaskStore().removeTask(event.payload.taskId);
+      // Buffer the event for batch processing
+      bufferEvent('task:cancelled', {
+        taskId: event.payload.taskId
+      });
     });
     unlistenFunctions.push(taskCancelled);
     
-    // URL Status Events
+    // URL Status Events - Use batch processing for performance
+    let pendingUrlUpdates: { urlId: string, status: string }[] = [];
+    let urlUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+    
     const urlStatusUpdated = await listen<{ urlId: string, status: string }>('url:status:updated', (event) => {
       if (!event.payload || !event.payload.urlId) return;
       
-      console.log(`URL ${event.payload.urlId} status: ${event.payload.status}`);
+      // Collect URL updates for batch processing
+      pendingUrlUpdates.push({
+        urlId: event.payload.urlId,
+        status: event.payload.status
+      });
       
-      // Update URL status in the store
-      if (event.payload.status) {
-        getUrlStore().updateUrlStatus(event.payload.urlId, event.payload.status as any);
+      // Debounce updates to reduce UI load
+      if (!urlUpdateTimer) {
+        urlUpdateTimer = setTimeout(() => {
+          // Process URL updates in batches using worker
+          if (pendingUrlUpdates.length > 0) {
+            workerService.sendMessage('BATCH_URL_UPDATES', { updates: pendingUrlUpdates }, (processedUpdates) => {
+              // Update URLs in store
+              processedUpdates.forEach(update => {
+                getUrlStore().updateUrlStatus(update.urlId, update.status as any);
+              });
+            });
+            
+            pendingUrlUpdates = [];
+          }
+          urlUpdateTimer = null;
+        }, 100); // Process URL updates less frequently than tasks
       }
     });
     unlistenFunctions.push(urlStatusUpdated);
     
-    // Technology Events
+    // Technology Events - Buffer and batch with worker
     const techCreated = await listen<{ techId: string, name: string }>('tech:created', (event) => {
       console.log('Technology created:', event.payload);
       
-      // Refresh the technologies list
+      // Buffer event for processing
+      bufferEvent('tech:created', {
+        techId: event.payload.techId,
+        name: event.payload.name
+      });
+      
+      // Still trigger an immediate fetch for responsiveness
       getTechStore().fetchTechnologies();
     });
     unlistenFunctions.push(techCreated);
@@ -211,7 +384,13 @@ export async function setupEventListeners() {
     const techUpdated = await listen<{ techId: string, data: any }>('tech:updated', (event) => {
       console.log('Technology updated:', event.payload);
       
-      // Refresh the technologies list
+      // Buffer event for processing
+      bufferEvent('tech:updated', {
+        techId: event.payload.techId,
+        data: event.payload.data
+      });
+      
+      // Still trigger an immediate fetch for responsiveness
       getTechStore().fetchTechnologies();
     });
     unlistenFunctions.push(techUpdated);
@@ -219,13 +398,25 @@ export async function setupEventListeners() {
     const techDeleted = await listen<{ techId: string }>('tech:deleted', (event) => {
       console.log('Technology deleted:', event.payload.techId);
       
-      // Refresh the technologies list
+      // Buffer event for processing
+      bufferEvent('tech:deleted', {
+        techId: event.payload.techId
+      });
+      
+      // Still trigger an immediate fetch for responsiveness
       getTechStore().fetchTechnologies();
     });
     unlistenFunctions.push(techDeleted);
     
     const techVersionAdded = await listen<{ techId: string, versionId: string, version: string }>('tech:version:added', (event) => {
       console.log('Version added:', event.payload);
+      
+      // Buffer event for processing
+      bufferEvent('tech:version:added', {
+        techId: event.payload.techId,
+        versionId: event.payload.versionId,
+        version: event.payload.version
+      });
       
       // If this is for the current technology, refresh versions
       const selectedTech = getTechStore().selectedTechnology;
@@ -238,6 +429,12 @@ export async function setupEventListeners() {
     const techVersionDeleted = await listen<{ techId: string, versionId: string }>('tech:version:deleted', (event) => {
       console.log('Version deleted:', event.payload);
       
+      // Buffer event for processing
+      bufferEvent('tech:version:deleted', {
+        techId: event.payload.techId,
+        versionId: event.payload.versionId
+      });
+      
       // If this is for the current technology, refresh versions
       const selectedTech = getTechStore().selectedTechnology;
       if (selectedTech && selectedTech.id === event.payload.techId) {
@@ -246,66 +443,84 @@ export async function setupEventListeners() {
     });
     unlistenFunctions.push(techVersionDeleted);
     
-    // Processing Events
+    // Processing Events - offload to worker
     const processingStarted = await listen<{ taskId: string, url?: string, techId?: string }>('processing:started', (event) => {
       console.log('Processing started:', event.payload);
-      // Remove toast notification for individual tasks
+      
+      // Buffer event for processing
+      bufferEvent('processing:started', {
+        taskId: event.payload.taskId,
+        url: event.payload.url,
+        techId: event.payload.techId
+      });
     });
     unlistenFunctions.push(processingStarted);
     
     const processingProgress = await listen<{ taskId: string, stage: string, progress: number }>('processing:progress', (event) => {
-      console.log(`Processing ${event.payload.taskId} - ${event.payload.stage}: ${event.payload.progress}%`);
+      // Buffer event for batch processing
+      bufferEvent('processing:progress', {
+        taskId: event.payload.taskId,
+        stage: event.payload.stage,
+        progress: event.payload.progress
+      });
       
-      // Update task with additional stage information
-      if (event.payload && event.payload.taskId) {
+      // For visibility, still log significant progress updates
+      if (event.payload.progress === 0 || event.payload.progress === 100) {
+        console.log(`Processing ${event.payload.taskId} - ${event.payload.stage}: ${event.payload.progress}%`);
+      }
+      
+      // Get the task and update its stages - but use worker for calculations
+      const taskId = event.payload.taskId;
+      const stage = event.payload.stage;
+      const progress = event.payload.progress;
+      
+      if (taskId && stage) {
         const tasks = getTaskStore().tasks;
-        const task = tasks.find(t => t.id === event.payload.taskId);
+        const task = tasks.find(t => t.id === taskId);
         
         if (task) {
-          const updatedStages = task.stages || [];
-          const stageIndex = updatedStages.findIndex(s => s.name === event.payload.stage);
+          // Create a copy of stages
+          const updatedStages = [...(task.stages || [])];
+          const stageIndex = updatedStages.findIndex(s => s.name === stage);
           
           // Map progress to status
           let stageStatus: 'idle' | 'pending' | 'active' | 'paused' | 'completed' | 'failed' | 'cancelled';
-          if (event.payload.progress === 0) stageStatus = 'pending';
-          else if (event.payload.progress === 100) stageStatus = 'completed';
+          if (progress === 0) stageStatus = 'pending';
+          else if (progress === 100) stageStatus = 'completed';
           else stageStatus = 'active';
           
           if (stageIndex >= 0) {
             // Update existing stage
             updatedStages[stageIndex] = {
               ...updatedStages[stageIndex],
-              progress: event.payload.progress,
+              progress: progress,
               status: stageStatus
             };
           } else {
             // Add new stage
             updatedStages.push({
-              id: `${task.id}-${event.payload.stage}`,
-              name: event.payload.stage,
-              progress: event.payload.progress,
+              id: `${task.id}-${stage}`,
+              name: stage,
+              progress: progress,
               status: stageStatus
             });
           }
           
-          // Create updated task with new stages
+          // Update task with new stages, but let worker calculate overall progress
           const updatedTask = {
             ...task,
             stages: updatedStages
           };
           
-          // Find the overall progress by averaging all stages
-          const totalProgress = updatedStages.length > 0 
-            ? Math.round(updatedStages.reduce((sum, stage) => sum + stage.progress, 0) / updatedStages.length)
-            : task.progress;
-          
-          // Update task with new stages and progress
-          getTaskStore().updateTaskProgress(
-            task.id,
-            totalProgress,
-            task.status,
-            updatedStages
-          );
+          // Use worker to calculate progress efficiently
+          workerService.sendMessage('CALCULATE_PROGRESS', { task: updatedTask }, (result) => {
+            getTaskStore().updateTaskProgress(
+              taskId,
+              result.progress,
+              result.status as TaskStatus,
+              updatedStages
+            );
+          });
         }
       }
     });
@@ -314,44 +529,62 @@ export async function setupEventListeners() {
     const processingCompleted = await listen<{ taskId: string, snippetsCount: number }>('processing:completed', (event) => {
       console.log(`Processing completed with ${event.payload.snippetsCount} snippets`);
       
-      // No toast for individual task completion - too noisy with many tasks
+      // Buffer event for batch processing
+      bufferEvent('processing:completed', {
+        taskId: event.payload.taskId,
+        snippetsCount: event.payload.snippetsCount
+      });
     });
     unlistenFunctions.push(processingCompleted);
     
-    // Application Notifications - ALWAYS SHOW AS TOASTS
-    const appError = await listen<{ code: string, message: string, details?: any }>('app:error', (event) => {
-      console.error('Application error:', event.payload);
-      
-      // Show error toast notification
-      toast.error('Error', {
-        description: event.payload.message || 'An error occurred',
-        action: event.payload.details ? {
-          label: 'Details',
-          onClick: () => console.log('Error details:', event.payload.details),
-        } : undefined,
-      });
-    });
-    unlistenFunctions.push(appError);
-    
+    // App Notifications - Controlled via settings
     const appNotification = await listen<{ title: string, message: string, notificationType?: string }>('app:notification', (event) => {
-      console.log(`${event.payload.title}: ${event.payload.message}`);
+      if (!event.payload) return;
       
-      // Determine toast type based on notificationType
-      const notificationType = event.payload.notificationType || 'info';
+      const { title, message, notificationType } = event.payload;
       
+      // Filter out unnecessary notifications related to URL crawling
+      if (title.includes("Crawling") && 
+          ((!title.includes("Started") && !title.includes("Completed")) || 
+           (title.includes("Started") && message.includes("Started crawling from URL:")))) {
+        // Just log to console instead of showing a toast
+        console.log(`${title}: ${message}`);
+        return;
+      }
+      
+      // Show only important notifications as toasts
       switch (notificationType) {
-        case 'success':
-          toast.success(event.payload.title, { description: event.payload.message });
+        case 'error':
+          toast.error(title, { description: message });
           break;
         case 'warning':
-          toast.warning(event.payload.title, { description: event.payload.message });
-          break;
-        case 'error':
-          toast.error(event.payload.title, { description: event.payload.message });
+          toast.warning(title, { description: message });
           break;
         case 'info':
+          // Only show info notifications if they're important (not routine operations)
+          if (!title.includes("URL") || title.includes("All URLs")) {
+            toast.info(title, { description: message });
+          } else {
+            console.log(`[INFO] ${title}: ${message}`);
+          }
+          break;
+        case 'success':
+          // Only show success notifications for completed operations, not intermediate steps
+          if (title.includes("Completed") || title.includes("Finished")) {
+            toast.success(title, { description: message });
+          } else {
+            console.log(`[SUCCESS] ${title}: ${message}`);
+          }
+          break;
         default:
-          toast.info(event.payload.title, { description: event.payload.message });
+          // Default notifications - only show if they seem important
+          if (title.includes("Error") || title.includes("Failed")) {
+            toast.error(title, { description: message });
+          } else if (title.includes("Completed") || title.includes("Finished")) {
+            toast.success(title, { description: message });
+          } else {
+            console.log(`[NOTIFICATION] ${title}: ${message}`);
+          }
           break;
       }
     });
@@ -360,20 +593,5 @@ export async function setupEventListeners() {
     console.log('All event listeners set up successfully');
   } catch (error) {
     console.error('Error setting up event listeners:', error);
-  }
-}
-
-/**
- * Clean up all event listeners to prevent memory leaks
- */
-export async function cleanupEventListeners() {
-  try {
-    for (const unlisten of unlistenFunctions) {
-      await unlisten();
-    }
-    unlistenFunctions.length = 0;
-    console.log('All event listeners cleaned up');
-  } catch (error) {
-    console.error('Error cleaning up event listeners:', error);
   }
 }

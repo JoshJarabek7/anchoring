@@ -160,7 +160,7 @@ async fn init_postgres(connection_string: &str) -> Result<(), DbError> {
     // Create connection manager and pool
     let manager = ConnectionManager::<PgConnection>::new(connection_string);
     let pool = Pool::builder()
-        .max_size(15)
+        .max_size(32)
         .connection_timeout(Duration::from_secs(10))
         .build(manager)
         .map_err(|e| {

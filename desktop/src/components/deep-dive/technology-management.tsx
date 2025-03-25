@@ -51,8 +51,8 @@ export const TechnologyManagement = memo(() => {
 
   return (
     <>
-      <div className="p-5 rounded-xl shadow-lg backdrop-blur-md border border-white/10 dark:border-blue-800/30 bg-white/80 dark:bg-[#0a1e36]/90">
-        <h2 className="text-xl font-semibold mb-4 text-blue-900 dark:text-blue-50 flex items-center gap-2">
+      <div className="p-5 rounded-xl shadow-lg backdrop-blur-md border border-blue-800/30 bg-[#0a1e36]/90">
+        <h2 className="text-xl font-semibold mb-4 text-blue-50 flex items-center gap-2">
           <Code className="h-5 w-5 text-primary" />
           Technology Management
         </h2>
@@ -60,25 +60,25 @@ export const TechnologyManagement = memo(() => {
         <div className="space-y-4">
           {/* Selected Technology */}
           <div>
-            <h3 className="text-base font-medium mb-3 text-blue-800 dark:text-blue-200">
+            <h3 className="text-base font-medium mb-3 text-blue-200">
               Current Selection
             </h3>
 
             {selectedTechnology ? (
               <div className="flex flex-wrap gap-4">
                 <motion.div
-                  className="bg-white/80 dark:bg-[#0a2e4e]/90 p-4 rounded-xl flex-1 min-w-[250px] border border-blue-200/30 dark:border-blue-600/20 shadow-lg overflow-hidden"
+                  className="bg-[#0a2e4e]/90 p-4 rounded-xl flex-1 min-w-[250px] border border-blue-600/20 shadow-lg overflow-hidden"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <h4 className="font-medium text-lg text-blue-900 dark:text-blue-50">
+                      <h4 className="font-medium text-lg text-blue-50">
                         {selectedTechnology.name}
                       </h4>
                       {selectedTechnology.language && (
-                        <span className="text-xs px-2 py-0.5 bg-blue-100/50 dark:bg-blue-900/50 text-blue-900 dark:text-blue-200 rounded-full mt-2 inline-block">
+                        <span className="text-xs px-2 py-0.5 bg-blue-900/50 text-blue-200 rounded-full mt-2 inline-block">
                           {selectedTechnology.language}
                         </span>
                       )}
@@ -87,7 +87,7 @@ export const TechnologyManagement = memo(() => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 bg-white/50 dark:bg-[#0a3056]/70 hover:bg-red-100/30 dark:hover:bg-red-900/30 rounded-lg"
+                      className="h-7 w-7 bg-[#0a3056]/70 hover:bg-red-900/30 rounded-lg"
                       onClick={() =>
                         handleDeleteClick(
                           "tech",
@@ -103,7 +103,7 @@ export const TechnologyManagement = memo(() => {
                   {/* Versions */}
                   <div className="mt-4">
                     <div className="flex items-center justify-between">
-                      <h5 className="text-sm font-medium text-blue-800/80 dark:text-blue-300/80">
+                      <h5 className="text-sm font-medium text-blue-300/80">
                         Versions
                       </h5>
                       <Button
@@ -129,8 +129,8 @@ export const TechnologyManagement = memo(() => {
                               className={cn(
                                 `inline-flex items-center px-2 py-1 rounded-md text-xs font-medium`,
                                 selectedVersion?.id === version.id
-                                  ? "bg-blue-500/40 text-blue-900 dark:text-white shadow-md dark:shadow-[0_0_15px_rgba(56,189,248,0.3)]"
-                                  : "bg-blue-100/40 dark:bg-[#0d3658]/60 text-blue-800 dark:text-blue-200"
+                                  ? "bg-blue-500/40 text-white shadow-md shadow-[0_0_15px_rgba(56,189,248,0.3)]"
+                                  : "bg-[#0d3658]/60 text-blue-200"
                               )}
                               initial={{ opacity: 0, scale: 0.8 }}
                               animate={{ opacity: 1, scale: 1 }}
@@ -144,7 +144,7 @@ export const TechnologyManagement = memo(() => {
                             >
                               <span className="mr-1.5">{version.version}</span>
                               <button
-                                className="text-blue-700/60 dark:text-blue-300/60 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                                className="text-blue-300/60 hover:text-red-400 transition-colors"
                                 onClick={() =>
                                   handleDeleteClick(
                                     "version",
@@ -172,7 +172,7 @@ export const TechnologyManagement = memo(() => {
                         (v) => v.technologyId === selectedTechnology.id
                       ).length === 0 && (
                         <motion.div
-                          className="text-xs text-blue-700/60 dark:text-blue-400/60 italic p-1.5"
+                          className="text-xs text-blue-400/60 italic p-1.5"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ delay: 0.2 }}
@@ -190,8 +190,8 @@ export const TechnologyManagement = memo(() => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1, duration: 0.5 }}
               >
-                <div className="bg-white/80 dark:bg-[#0a2e4e]/90 p-6 rounded-xl text-center shadow-md border border-blue-100/40 dark:border-blue-800/30">
-                  <p className="text-blue-800/70 dark:text-blue-300/70 mb-4 text-base">
+                <div className="bg-[#0a2e4e]/90 p-6 rounded-xl text-center shadow-md border border-blue-800/30">
+                  <p className="text-blue-300/70 mb-4 text-base">
                     No technology selected
                   </p>
                   <Button
@@ -210,7 +210,7 @@ export const TechnologyManagement = memo(() => {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="bg-white dark:bg-[#0a2642] rounded-xl shadow-xl p-5 border border-gray-200 dark:border-blue-900/40">
+        <DialogContent className="bg-[#0a2642] rounded-xl shadow-xl p-5 border border-blue-900/40">
           <DialogHeader>
             <DialogTitle className="text-lg">
               {deleteType === "tech" ? "Delete Technology" : "Delete Version"}
@@ -223,9 +223,9 @@ export const TechnologyManagement = memo(() => {
           </DialogDescription>
 
           <div className="py-4">
-            <p className="text-blue-900 dark:text-blue-50 text-base">
+            <p className="text-blue-50 text-base">
               Are you sure you want to delete
-              <span className="font-semibold text-blue-900 dark:text-blue-100 mx-2">
+              <span className="font-semibold text-blue-100 mx-2">
                 {deleteName}
               </span>
               {deleteType === "tech" &&
@@ -240,7 +240,7 @@ export const TechnologyManagement = memo(() => {
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
-              className="bg-white dark:bg-[#0a2e4e] px-4 rounded-lg text-sm"
+              className="bg-[#0a2e4e] px-4 rounded-lg text-sm"
               onClick={() => setDeleteConfirmOpen(false)}
             >
               Cancel

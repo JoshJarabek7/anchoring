@@ -15,54 +15,6 @@ impl DocumentationUrlRepository {
         Self {}
     }
 
-    /// Get all URLs for a technology with optional content
-    pub async fn get_by_technology(
-        &self,
-        technology_id: Uuid,
-        include_content: bool,
-    ) -> Result<Vec<DocumentationUrl>, DbError> {
-        let tech_id = technology_id;
-        let include = include_content;
-
-        tokio::task::spawn_blocking(move || {
-            let mut conn = get_pg_connection()?;
-
-            let mut query = documentation_urls::table
-                .filter(documentation_urls::technology_id.eq(tech_id))
-                .order(documentation_urls::url.asc())
-                .into_boxed();
-
-            // Optionally exclude large content fields
-            if !include {
-                query = query.select((
-                    documentation_urls::id,
-                    documentation_urls::technology_id,
-                    documentation_urls::version_id,
-                    documentation_urls::url,
-                    documentation_urls::status,
-                    diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                        "NULL",
-                    ), // html
-                    diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                        "NULL",
-                    ), // markdown
-                    diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                        "NULL",
-                    ), // cleaned_markdown
-                    documentation_urls::is_processed,
-                    documentation_urls::created_at,
-                    documentation_urls::updated_at,
-                ));
-            }
-
-            query
-                .load::<DocumentationUrl>(&mut conn)
-                .map_err(DbError::QueryError)
-        })
-        .await
-        .map_err(|e| DbError::Unknown(format!("Task join error: {}", e)))?
-    }
-
     /// Get all URLs for a version with optional content
     pub async fn get_by_version(
         &self,
@@ -131,67 +83,6 @@ impl DocumentationUrlRepository {
                 .filter(documentation_urls::url.eq(url_str))
                 .first::<DocumentationUrl>(&mut conn)
                 .optional()
-                .map_err(DbError::QueryError)
-        })
-        .await
-        .map_err(|e| DbError::Unknown(format!("Task join error: {}", e)))?
-    }
-
-    /// Get URLs by status with optional filters
-    pub async fn get_by_status(
-        &self,
-        technology_id: Option<Uuid>,
-        version_id: Option<Uuid>,
-        status: &str,
-        include_content: bool,
-    ) -> Result<Vec<DocumentationUrl>, DbError> {
-        let tech_id = technology_id;
-        let ver_id = version_id;
-        let status_str = status.to_string();
-        let include = include_content;
-
-        tokio::task::spawn_blocking(move || {
-            let mut conn = get_pg_connection()?;
-
-            let mut query = documentation_urls::table
-                .filter(documentation_urls::status.eq(status_str))
-                .into_boxed();
-
-            // Apply optional filters
-            if let Some(tech_id) = tech_id {
-                query = query.filter(documentation_urls::technology_id.eq(tech_id));
-            }
-
-            if let Some(ver_id) = ver_id {
-                query = query.filter(documentation_urls::version_id.eq(ver_id));
-            }
-
-            // Optionally exclude large content fields
-            if !include {
-                query = query.select((
-                    documentation_urls::id,
-                    documentation_urls::technology_id,
-                    documentation_urls::version_id,
-                    documentation_urls::url,
-                    documentation_urls::status,
-                    diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                        "NULL",
-                    ), // html
-                    diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                        "NULL",
-                    ), // markdown
-                    diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                        "NULL",
-                    ), // cleaned_markdown
-                    documentation_urls::is_processed,
-                    documentation_urls::created_at,
-                    documentation_urls::updated_at,
-                ));
-            }
-
-            query
-                .order(documentation_urls::url.asc())
-                .load::<DocumentationUrl>(&mut conn)
                 .map_err(DbError::QueryError)
         })
         .await

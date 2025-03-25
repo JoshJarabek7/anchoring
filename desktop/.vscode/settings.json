@@ -7,5 +7,16 @@
             "name": "Anchoring Desktop",
             "connectString": "postgresql://anchoring:anchoring@localhost:5432/anchoring"
         }
-    ]
+    ],
+    "rust-analyzer.cargo.target": "aarch64-apple-darwin",
+    "rust-analyzer.cargo.buildScripts.overrideCommand": [
+        "cargo",
+        "build",
+        "--target-dir=target/rust-analyzer"
+    ],
+    "[rust]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnSaveMode": "file",
+        "editor.defaultFormatter": "rust-lang.rust-analyzer"
+    }
 }

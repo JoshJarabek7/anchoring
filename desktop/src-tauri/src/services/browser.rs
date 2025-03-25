@@ -120,18 +120,43 @@ impl BrowserService {
                     // Add longer timeouts to prevent connection issues
                     .idle_browser_timeout(std::time::Duration::from_secs(120))
                     // Add additional Chrome flags for better performance using OsStr values
-                    .args(vec![
-                        std::ffi::OsStr::new("--disable-dev-shm-usage"), // Overcome limited /dev/shm size
-                        std::ffi::OsStr::new("--disable-setuid-sandbox"),
-                        std::ffi::OsStr::new("--disable-web-security"), // Disable CORS restrictions
-                        std::ffi::OsStr::new("--disable-features=IsolateOrigins,site-per-process"),
-                        std::ffi::OsStr::new("--disable-background-timer-throttling"),
-                        std::ffi::OsStr::new("--disable-backgrounding-occluded-windows"),
-                        std::ffi::OsStr::new("--disable-breakpad"),
-                        std::ffi::OsStr::new("--disable-hang-monitor"),
-                        std::ffi::OsStr::new("--disable-ipc-flooding-protection"),
-                        std::ffi::OsStr::new("--disable-client-side-phishing-detection"),
-                    ])
+                    .args({
+                        
+                        let chrome_args = vec![
+                            // Existing flags
+                            std::ffi::OsStr::new("--disable-dev-shm-usage"),
+                            std::ffi::OsStr::new("--disable-setuid-sandbox"),
+                            std::ffi::OsStr::new("--disable-web-security"),
+                            std::ffi::OsStr::new("--disable-features=IsolateOrigins,site-per-process"),
+                            std::ffi::OsStr::new("--disable-background-timer-throttling"),
+                            std::ffi::OsStr::new("--disable-backgrounding-occluded-windows"),
+                            std::ffi::OsStr::new("--disable-breakpad"),
+                            std::ffi::OsStr::new("--disable-hang-monitor"),
+                            std::ffi::OsStr::new("--disable-ipc-flooding-protection"),
+                            std::ffi::OsStr::new("--disable-client-side-phishing-detection"),
+                            
+                            // Additional performance flags
+                            std::ffi::OsStr::new("--disable-background-networking"),
+                            std::ffi::OsStr::new("--disable-component-extensions-with-background-pages"),
+                            std::ffi::OsStr::new("--disable-default-apps"),
+                            std::ffi::OsStr::new("--disable-extensions"),
+                            std::ffi::OsStr::new("--disable-notifications"),
+                            std::ffi::OsStr::new("--disable-popup-blocking"),
+                            std::ffi::OsStr::new("--disable-prompt-on-repost"),
+                            std::ffi::OsStr::new("--no-first-run"),
+                            std::ffi::OsStr::new("--no-pings"),
+                            std::ffi::OsStr::new("--no-zygote"),
+                            std::ffi::OsStr::new("--disable-domain-reliability"),
+                            std::ffi::OsStr::new("--ignore-certificate-errors"),
+                            std::ffi::OsStr::new("--disable-features=TranslateUI"),
+                            
+                            // Enable high-performance rendering
+                            std::ffi::OsStr::new("--enable-gpu-rasterization"),
+                            std::ffi::OsStr::new("--enable-zero-copy")
+                        ];
+                        
+                        chrome_args
+                    })
                     .build()
                     .map_err(|e| format!("Failed to build launch options: {}", e))?;
 
@@ -165,8 +190,11 @@ impl BrowserService {
                     Err(_e) => {}
                 }
 
-                // Get content before interactions
-                let simple_html = tab.get_content().ok();
+                // Get content before interactions - this will be our base content
+                let initial_html = match tab.get_content() {
+                    Ok(content) => content,
+                    Err(e) => return Err(format!("Failed to get initial content: {}", e)),
+                };
 
                 // Scroll through the page to load lazy content
                 match BrowserService::scroll_page_for_lazy_loading(&tab) {
@@ -175,21 +203,22 @@ impl BrowserService {
                 }
 
                 // Try to interact with interactive elements (accordions, dropdowns, tabs)
-                BrowserService::interact_with_interactive_elements(&tab);
+                // but don't navigate away from the current page
+                let _ = BrowserService::interact_with_interactive_elements(&tab);
 
                 // Scroll again after expansion
-                BrowserService::scroll_page_for_lazy_loading(&tab);
+                let _ = BrowserService::scroll_page_for_lazy_loading(&tab);
 
-                // Get the final HTML content, fall back to simple HTML if this fails
-                let html = match tab.get_content() {
+                // Extract shadow DOM content
+                let shadow_dom_content = match BrowserService::extract_shadow_dom_content(&tab) {
                     Ok(content) => content,
-                    Err(e) => {
-                        if let Some(html) = simple_html {
-                            html
-                        } else {
-                            return Err(format!("Failed to get page content: {}", e));
-                        }
-                    }
+                    Err(_) => String::new(), // Empty string if extraction fails
+                };
+
+                // Get the final HTML content after interactions
+                let expanded_html = match tab.get_content() {
+                    Ok(content) => content,
+                    Err(_) => initial_html.clone(), // Fall back to initial content if this fails
                 };
 
                 // Try to close tab
@@ -205,7 +234,22 @@ impl BrowserService {
                 // Force browser cleanup explicitly
                 drop(browser);
 
-                Ok(html)
+                // Merge the initial HTML, expanded HTML and shadow DOM content
+                // This simple approach ensures we don't lose content during interactions
+                let merged_html = if !shadow_dom_content.is_empty() {
+                    // Insert shadow DOM content before the closing body tag
+                    if let Some(pos) = expanded_html.rfind("</body>") {
+                        let (first, last) = expanded_html.split_at(pos);
+                        format!("{}\n<!-- Shadow DOM Content -->\n<div id=\"shadow-dom-extracted-content\">{}</div>\n{}", first, shadow_dom_content, last)
+                    } else {
+                        // If no closing body tag, just append shadow DOM content
+                        format!("{}\n<!-- Shadow DOM Content -->\n<div id=\"shadow-dom-extracted-content\">{}</div>", expanded_html, shadow_dom_content)
+                    }
+                } else {
+                    expanded_html
+                };
+
+                Ok(merged_html)
             }),
         )
         .await
@@ -318,6 +362,59 @@ impl BrowserService {
         }
     }
 
+    /// Helper function to extract content from shadow DOM elements
+    pub fn extract_shadow_dom_content(tab: &headless_chrome::Tab) -> Result<String, String> {
+        let script = r#"
+    new Promise((resolve) => {
+        function extractShadowContent(root, results = []) {
+            // Process all shadow roots
+            const elements = root.querySelectorAll('*');
+            for (const element of elements) {
+                if (element.shadowRoot) {
+                    // Get the tag name and any identifiers for debugging
+                    const id = element.id ? `#${element.id}` : '';
+                    const className = element.className && typeof element.className === 'string' ? 
+                        `.${element.className.split(' ').join('.')}` : '';
+                    const elementDesc = `${element.tagName.toLowerCase()}${id}${className}`;
+                    
+                    // Get the HTML content of the shadow root
+                    const shadowHTML = element.shadowRoot.innerHTML;
+                    
+                    // Add to results with element description as marker
+                    results.push(`<!-- Shadow DOM from ${elementDesc} -->\n<div class="shadow-dom-content" data-host="${elementDesc}">${shadowHTML}</div>`);
+                    
+                    // Recursively process nested shadow roots
+                    extractShadowContent(element.shadowRoot, results);
+                }
+            }
+            return results;
+        }
+        
+        // Start extraction from document body
+        const shadowContents = extractShadowContent(document);
+        resolve(shadowContents.join('\n\n'));
+    })
+    "#;
+
+        match tab.evaluate(script, true) {
+            Ok(result) => {
+                if let Some(value) = result.value {
+                    // Convert the JavaScript value to a string
+                    match serde_json::from_str::<String>(&value.to_string()) {
+                        Ok(content) => Ok(content),
+                        Err(_) => {
+                            // Try to use the value directly if it's already a string
+                            Ok(value.to_string().trim_matches('"').to_string())
+                        }
+                    }
+                } else {
+                    Ok(String::new()) // Return empty string if no shadow DOM content
+                }
+            }
+            Err(e) => Err(format!("Shadow DOM extraction failed: {}", e)),
+        }
+    }
+
     /// Helper function to interact with interactive elements like accordions, dropdowns, etc.
     pub fn interact_with_interactive_elements(
         tab: &headless_chrome::Tab,
@@ -334,7 +431,6 @@ impl BrowserService {
                 accordionsExpanded: 0,
                 dropdownsClicked: 0,
                 tabsClicked: 0,
-                paginationClicks: 0,
                 inputsClicked: 0,
                 hoveredElements: 0,
                 heightChange: 0
@@ -343,6 +439,9 @@ impl BrowserService {
         
         // Track original page height for comparison later
         const initialHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+        
+        // Track original URL to prevent navigation
+        const originalUrl = window.location.href;
         
         try {
             // --- COMMON INTERACTIVE ELEMENTS ---
@@ -383,7 +482,13 @@ impl BrowserService {
             for (const element of allAccordions) {
                 try {
                     element.click();
-                    await wait(100); // Reduced wait time 
+                    void await wait(100); // Reduced wait time 
+                    
+                    // Check if URL changed - if so, go back to original URL
+                    if (window.location.href !== originalUrl) {
+                        console.warn("Navigation detected, returning to original URL");
+                        window.history.pushState({}, "", originalUrl);
+                    }
                 } catch (e) {}
             }
             
@@ -423,6 +528,13 @@ impl BrowserService {
                 try {
                     element.click();
                     await wait(150); // Slightly longer wait for dropdown animation
+                    
+                    // Check if URL changed - if so, go back to original URL
+                    if (window.location.href !== originalUrl) {
+                        console.warn("Navigation detected, returning to original URL");
+                        window.history.pushState({}, "", originalUrl);
+                    }
+                    
                     // Click again to close if needed (avoid leaving open dropdowns)
                     element.click();
                     await wait(50); // Minimal wait for closing animation
@@ -477,8 +589,23 @@ impl BrowserService {
             // Click all show more buttons
             for (const button of allShowMoreButtons) {
                 try {
+                    // Save button href for safety check if it's an anchor
+                    const isAnchor = button.tagName.toLowerCase() === 'a';
+                    const href = isAnchor ? button.getAttribute('href') : null;
+                    
+                    // Skip links that would navigate to new pages
+                    if (isAnchor && href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                        continue;
+                    }
+                    
                     button.click();
                     await wait(200); // Wait for content to expand but reduced
+                    
+                    // Check if URL changed - if so, go back to original URL
+                    if (window.location.href !== originalUrl) {
+                        console.warn("Navigation detected, returning to original URL");
+                        window.history.pushState({}, "", originalUrl);
+                    }
                 } catch (e) {}
             }
             
@@ -510,8 +637,20 @@ impl BrowserService {
             // Click all inactive tabs to activate their content
             for (const tab of allTabs) {
                 try {
+                    // Skip tabs with hrefs that would navigate away
+                    const href = tab.getAttribute('href');
+                    if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                        continue;
+                    }
+                    
                     tab.click();
                     await wait(200); // Reduced wait for tab content to load
+                    
+                    // Check if URL changed - if so, go back to original URL
+                    if (window.location.href !== originalUrl) {
+                        console.warn("Navigation detected, returning to original URL");
+                        window.history.pushState({}, "", originalUrl);
+                    }
                 } catch (e) {}
             }
             
@@ -605,51 +744,8 @@ impl BrowserService {
                 } catch (e) {}
             }
             
-            // 7. Handle forms and pagination elements
+            // 7. Handle forms and inputs - NO pagination element interaction
             try {
-                // Find and interact with pagination elements
-                const paginationSelectors = [
-                    '.pagination .page-item:not(.active) .page-link',
-                    '.pagination__link:not(.pagination__link--active)',
-                    '[aria-label="Next page"]',
-                    '[aria-label="Next"]',
-                    '.next-page',
-                    '.next-button'
-                ];
-                
-                // Find and click non-active pagination elements (limited to first 2)
-                let paginationElements = [];
-                for (const selector of paginationSelectors) {
-                    try {
-                        const elements = document.querySelectorAll(selector);
-                        if (elements.length > 0) {
-                            paginationElements = [...paginationElements, ...Array.from(elements)];
-                        }
-                    } catch (e) {}
-                }
-                
-                // Show content behind the first few pages of pagination
-                // Limit to just 2 page clicks to avoid clicking too many pages
-                const paginationLimit = 2;
-                if (paginationElements.length > 0) {
-                    for (let i = 0; i < Math.min(paginationLimit, paginationElements.length); i++) {
-                        try {
-                            paginationElements[i].click();
-                            
-                            // Allow some time for page content to load after pagination click
-                            await wait(500); // Reduced wait but still necessary
-                            
-                            // Scroll and interact with elements on each paginated view
-                            // Scroll again after clicking pagination
-                            const positions = [0, document.body.scrollHeight * 0.5, document.body.scrollHeight];
-                            positions.forEach(pos => window.scrollTo(0, pos));
-                            
-                            // Wait for content to load
-                            await wait(200); // Reduced but still necessary
-                        } catch (e) {}
-                    }
-                }
-                
                 // Handle checkbox and radio inputs - make them visible
                 // Some documentation systems show different content based on selected options
                 const inputSelectors = ['input[type="radio"]:not(:checked)', 'input[type="checkbox"]:not(:checked)'];
@@ -669,14 +765,20 @@ impl BrowserService {
                     for (const input of inputElements) {
                         try {
                             input.click();
-                            await wait(150); // Reduced wait
+                            void await wait(150); // Reduced wait
+                            
+                            // Check if URL changed - if so, go back to original URL
+                            if (window.location.href !== originalUrl) {
+                                console.warn("Navigation detected, returning to original URL");
+                                window.history.pushState({}, "", originalUrl);
+                            }
                         } catch (e) {}
                     }
                 }
             } catch (e) {}
             
             // Final wait to ensure all dynamic content has loaded
-            await wait(300); // Reduced but still needed
+            void await wait(300); // Reduced but still needed
             
             // Check if page height changed significantly (indication that we revealed content)
             const finalHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
@@ -689,7 +791,6 @@ impl BrowserService {
                 accordionsExpanded: allAccordions.length,
                 dropdownsClicked: allDropdowns.length,
                 tabsClicked: allTabs.length,
-                paginationClicks: paginationElements ? Math.min(paginationLimit, paginationElements.length) : 0,
                 inputsClicked: inputElements ? inputElements.length : 0,
                 hoveredElements: hoveredCount || 0,
                 heightChange: heightChange
@@ -703,7 +804,6 @@ impl BrowserService {
                 accordionsExpanded: 0,
                 dropdownsClicked: 0,
                 tabsClicked: 0,
-                paginationClicks: 0,
                 inputsClicked: 0,
                 hoveredElements: 0,
                 heightChange: 0

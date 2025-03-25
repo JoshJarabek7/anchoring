@@ -19,13 +19,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTechnologyStore } from "@/stores/technology-store";
-import { DocumentationUrl, UrlStatus, useUrlStore } from "@/stores/url-store";
+import { DocumentationUrl, useUrlStore } from "@/stores/url-store";
 import { CrawlEvent } from "@/types/events";
 import { Channel } from "@tauri-apps/api/core";
-import { motion } from "framer-motion";
-import { ExternalLink, Filter, Loader2, Play, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ExternalLink, Loader2, Play, RefreshCw, Search } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
+import { Pagination } from "@/components/ui/pagination";
+import { invoke } from "@tauri-apps/api/core";
 
 // URL status filter options
 type StatusFilter =
@@ -43,7 +44,6 @@ export function UrlProcessing() {
     selectedUrls,
     fetchUrls,
     toggleUrlSelection,
-    selectAllUrls,
     clearUrlSelection,
     fetchUrl,
     startCrawling,
@@ -60,16 +60,23 @@ export function UrlProcessing() {
   const [isCrawling, setIsCrawling] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
+  // Add pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   // Load URLs when the version changes
   useEffect(() => {
     if (selectedVersion) {
-      fetchUrls(selectedVersion.id);
+      // Explicitly set includeContent to false for better performance
+      fetchUrls(selectedVersion.id, false);
       fetchCrawlingSettings(selectedVersion.id);
     }
   }, [selectedVersion, fetchUrls, fetchCrawlingSettings]);
 
-  // Apply filters to URLs
-  const getFilteredUrls = () => {
+  // Memoize the filtered URLs to avoid recalculating on every render
+  const filteredUrls = useMemo(() => {
     // First apply search filter
     let filtered = searchTerm
       ? urls.filter((url) =>
@@ -110,9 +117,27 @@ export function UrlProcessing() {
     }
 
     return filtered;
+  }, [urls, searchTerm, statusFilter]);
+
+  // Paginate the filtered URLs
+  const paginatedUrls = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredUrls.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredUrls, currentPage, itemsPerPage]);
+
+  // Calculate total pages
+  const totalPages = Math.ceil(filteredUrls.length / itemsPerPage);
+
+  // Change page
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(Math.min(Math.max(1, newPage), totalPages));
   };
 
-  const filteredUrls = getFilteredUrls();
+  // Adjust items per page
+  const handleItemsPerPageChange = (items: number) => {
+    setItemsPerPage(items);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
 
   // Handle URL selection change
   const handleUrlSelectionChange = (urlId: string) => {
@@ -151,6 +176,7 @@ export function UrlProcessing() {
   const handleOpenUrlDetails = async (urlId: string) => {
     setIsLoadingDetails(true);
     try {
+      // Only fetch the full URL details with content when opening details
       const urlDetails = await fetchUrl(urlId);
       if (urlDetails) {
         setSelectedUrlDetails(urlDetails);
@@ -158,6 +184,9 @@ export function UrlProcessing() {
       }
     } catch (error) {
       console.error("Error fetching URL details:", error);
+      toast.error("Failed to load URL details", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
     } finally {
       setIsLoadingDetails(false);
     }
@@ -175,165 +204,108 @@ export function UrlProcessing() {
       return;
     }
 
+    // Get crawling settings
+    let settings: CrawlingSettings;
     try {
-      setIsCrawling(true);
+      settings = await invoke<CrawlingSettings>(
+        "get_version_crawling_settings",
+        {
+          versionId: selectedVersion.id,
+        }
+      );
+    } catch (error) {
+      toast.error("Failed to load crawling settings", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
 
-      // Ensure we have the latest crawl settings
-      await fetchCrawlingSettings(selectedVersion.id);
+    // Parse anti-paths and anti-keywords from settings
+    const antiPaths = settings.antiPaths
+      ? settings.antiPaths.split("\n").filter(Boolean)
+      : [];
+    const antiKeywords = settings.antiKeywords
+      ? settings.antiKeywords.split("\n").filter(Boolean)
+      : [];
 
-      const prefixPath = currentCrawlingSettings?.prefixPath || "";
-      const antiPathsString = currentCrawlingSettings?.antiPaths || "";
-      const antiKeywordsString = currentCrawlingSettings?.antiKeywords || "";
+    // Start crawling each selected URL
+    setIsCrawling(true);
 
-      // Parse anti-paths and anti-keywords
-      const antiPaths = antiPathsString
-        .split(",")
-        .map((p: string) => p.trim())
-        .filter((p: string) => p);
-      const antiKeywords = antiKeywordsString
-        .split(",")
-        .map((k: string) => k.trim())
-        .filter((k: string) => k);
-
-      console.log("Crawling selected URLs:", selectedUrls.length);
-      console.log("Settings:", {
-        prefixPath,
-        antiPaths,
-        antiKeywords,
+    try {
+      // Only show a single toast at the start instead of one per URL
+      toast.info(`Crawling ${selectedUrls.length} URLs`, {
+        description: "This process will run in the background",
       });
 
-      // Get selected URL objects
-      const selectedUrlObjects = urls.filter((url) =>
-        selectedUrls.includes(url.id)
-      );
-      console.log("Selected URL objects:", selectedUrlObjects.length);
+      const processedUrls = [];
 
-      // Start crawling each URL individually with robust error handling
-      let successCount = 0;
-      const taskIds = [];
-      const totalUrls = selectedUrlObjects.length;
-      const errorUrls = [];
-
-      console.log(
-        `Starting crawl for ${totalUrls} URLs. This will create ${totalUrls} individual crawl tasks.`
-      );
-
-      // Use a for loop with proper error isolation
-      for (let i = 0; i < selectedUrlObjects.length; i++) {
-        const url = selectedUrlObjects[i];
-        const urlIndex = i + 1;
-
-        console.log(
-          `[${urlIndex}/${totalUrls}] Starting crawl for URL: ${url.url}`
-        );
+      for (const urlId of selectedUrls) {
+        const url = urls.find((u) => u.id === urlId);
+        if (!url) continue;
 
         try {
-          // Create a new channel for each URL
-          const onEvent = new Channel<CrawlEvent>();
+          // Create a channel for crawl events
+          const channel = new Channel<CrawlEvent>("crawl-events");
 
-          // Create an error timeout in case the event never returns
-          const timeoutPromise = new Promise<null>((_, reject) => {
-            setTimeout(() => {
-              reject(
-                new Error(`Timeout waiting for crawler response for ${url.url}`)
-              );
-            }, 15000); // 15 second timeout
+          // Start crawling
+          const taskId = await invoke<string>("start_crawling", {
+            technologyId: selectedTechnology.id,
+            versionId: selectedVersion.id,
+            startUrl: url.url,
+            prefixPath: settings.prefixPath || "",
+            antiPaths,
+            antiKeywords,
+            skipProcessedUrls: true,
+            onEvent: channel,
           });
 
-          // Set up URL parameters
-          const urlPrefix = prefixPath || new URL(url.url).origin;
+          processedUrls.push(url.url);
 
-          console.log(
-            `[${urlIndex}/${totalUrls}] Creating crawl task with params:`,
-            {
-              url: url.url,
-              prefixPath: urlPrefix,
-              antiPaths,
-              antiKeywords,
-              skipProcessed: true,
-            }
-          );
-
-          // Try to create the task with a timeout
-          let taskId;
-          try {
-            // Use Promise.race to implement a timeout
-            taskId = await Promise.race([
-              startCrawling({
-                technologyId: selectedTechnology.id,
-                versionId: selectedVersion.id,
-                startUrl: url.url,
-                prefixPath: urlPrefix,
-                antiPaths,
-                antiKeywords,
-                skipProcessedUrls: true,
-                onEvent,
-              }),
-              timeoutPromise,
-            ]);
-
-            if (!taskId) {
-              throw new Error("No task ID returned");
-            }
-
-            console.log(
-              `[${urlIndex}/${totalUrls}] ✅ Task created for ${url.url} with ID: ${taskId}`
-            );
-            taskIds.push(taskId);
-            successCount++;
-          } catch (taskError) {
-            console.error(
-              `[${urlIndex}/${totalUrls}] ❌ Error creating task for ${url.url}:`,
-              taskError
-            );
-            errorUrls.push(url.url);
-            // Continue with the next URL despite error
-          }
-
-          // Always add a delay between task creations
-          console.log(`[${urlIndex}/${totalUrls}] Waiting before next task...`);
-          await new Promise((resolve) => setTimeout(resolve, 800));
-          console.log(`[${urlIndex}/${totalUrls}] Ready for next task!`);
+          // No need for toast per URL
+          console.log(`Started crawling URL: ${url.url} (Task ID: ${taskId})`);
         } catch (error) {
-          console.error(
-            `[${urlIndex}/${totalUrls}] ❌ Error crawling URL: ${url.url}:`,
-            error
-          );
-          errorUrls.push(url.url);
-          // Continue with the next URL despite error
+          console.error(`Error crawling URL ${url.url}:`, error);
+          // Keep error toasts to show issues
+          toast.error(`Failed to crawl URL: ${url.url}`, {
+            description: error instanceof Error ? error.message : String(error),
+          });
         }
       }
 
-      // Report final results
-      console.log(
-        `✅ All crawl tasks attempted. Success: ${successCount}/${totalUrls}. Failed: ${errorUrls.length}.`
-      );
-      if (errorUrls.length > 0) {
-        console.log(`Failed URLs:`, errorUrls);
-      }
-
-      if (successCount > 0) {
-        toast.success(`Crawling initiated for ${successCount} URLs`, {
-          description: "The URLs are being processed in the background",
+      // If any URLs were processed successfully, show a success toast
+      if (processedUrls.length > 0) {
+        toast.success(`Started crawling ${processedUrls.length} URLs`, {
+          description: "You can view progress in the task queue",
         });
-
-        // Clear the selection after crawling
-        clearUrlSelection();
-
-        // Refresh the URL list after a delay to see updates
-        setTimeout(() => {
-          if (selectedVersion) {
-            fetchUrls(selectedVersion.id);
-          }
-        }, 2000);
       }
+
+      // Clear selection after processing
+      clearUrlSelection();
     } catch (error) {
       toast.error("Failed to start crawling", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsCrawling(false);
+    }
+  };
+
+  // Handle manually refreshing the URLs list
+  const handleRefreshUrls = async () => {
+    if (!selectedVersion) return;
+
+    setIsRefreshing(true);
+    try {
+      await fetchUrls(selectedVersion.id, false);
+      toast.success("URLs refreshed successfully");
+    } catch (error) {
+      console.error("Error refreshing URLs:", error);
+      toast.error("Failed to refresh URLs", {
         description:
           error instanceof Error ? error.message : "Unknown error occurred",
       });
     } finally {
-      setIsCrawling(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -375,6 +347,61 @@ export function UrlProcessing() {
     }
   };
 
+  // Clear selected URL details when closing dialog to free up memory
+  const handleCloseDetails = () => {
+    setIsUrlDetailsOpen(false);
+    // After a short delay to allow for animations, clear the details from memory
+    setTimeout(() => {
+      setSelectedUrlDetails(null);
+    }, 300);
+  };
+
+  // Use URLs list optimized for rendering (no animations for 1000+ items)
+  const UrlListItem = useMemo(() => {
+    return ({ url }: { url: DocumentationUrl; index: number }) => (
+      <div
+        key={url.id}
+        className={`flex flex-wrap items-start gap-3 p-2 rounded-md transition-colors ${
+          selectedUrls.includes(url.id) ? "bg-primary/10" : ""
+        } hover:bg-muted/30 cursor-pointer mb-1`}
+      >
+        <Checkbox
+          checked={selectedUrls.includes(url.id)}
+          onCheckedChange={() => handleUrlSelectionChange(url.id)}
+          className="glass-surface flex-shrink-0 mt-1"
+        />
+
+        <div className="flex-1 min-w-0 max-w-[50%]">
+          <div className="text-sm break-all">{url.url}</div>
+        </div>
+
+        <div className="flex flex-shrink-0 items-center gap-2 ml-auto">
+          {getStatusBadge(url.status)}
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full"
+            onClick={() => handleOpenUrlDetails(url.id)}
+            disabled={isLoadingDetails}
+          >
+            {isLoadingDetails ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ExternalLink className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }, [
+    selectedUrls,
+    handleUrlSelectionChange,
+    isLoadingDetails,
+    getStatusBadge,
+    handleOpenUrlDetails,
+  ]);
+
   // Don't render if no version is selected
   if (!selectedVersion) return null;
 
@@ -389,8 +416,24 @@ export function UrlProcessing() {
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">URL Processing</h2>
-          <div className="text-sm text-muted-foreground">
-            {urls.length} URLs found • {selectedUrls.length} selected
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshUrls}
+              disabled={isRefreshing}
+              className="flex items-center gap-1.5"
+            >
+              {isRefreshing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Refresh
+            </Button>
+            <div className="text-sm text-muted-foreground">
+              {urls.length} URLs found • {selectedUrls.length} selected
+            </div>
           </div>
         </div>
 
@@ -418,40 +461,22 @@ export function UrlProcessing() {
                   <SelectValue placeholder="Status Filter" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem
-                    className="text-blue-800 dark:text-blue-50"
-                    value="all"
-                  >
+                  <SelectItem className="text-blue-50" value="all">
                     All Statuses
                   </SelectItem>
-                  <SelectItem
-                    className="text-blue-800 dark:text-blue-50"
-                    value="pending"
-                  >
+                  <SelectItem className="text-blue-50" value="pending">
                     Pending
                   </SelectItem>
-                  <SelectItem
-                    className="text-blue-800 dark:text-blue-50"
-                    value="processing"
-                  >
+                  <SelectItem className="text-blue-50" value="processing">
                     Processing
                   </SelectItem>
-                  <SelectItem
-                    className="text-blue-800 dark:text-blue-50"
-                    value="crawled"
-                  >
+                  <SelectItem className="text-blue-50" value="crawled">
                     Crawled/Ready
                   </SelectItem>
-                  <SelectItem
-                    className="text-blue-800 dark:text-blue-50"
-                    value="completed"
-                  >
+                  <SelectItem className="text-blue-50" value="completed">
                     Completed
                   </SelectItem>
-                  <SelectItem
-                    className="text-blue-800 dark:text-blue-50"
-                    value="error"
-                  >
+                  <SelectItem className="text-blue-50" value="error">
                     Error
                   </SelectItem>
                 </SelectContent>
@@ -496,69 +521,39 @@ export function UrlProcessing() {
             className="rounded-md overflow-hidden p-0"
             withDepthStriations
           >
-            <ScrollArea className="h-[60vh] max-h-[500px]">
+            <ScrollArea className="h-[400px] pr-4">
               {filteredUrls.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-[200px] text-center">
-                  <p className="text-muted-foreground">No URLs found</p>
-                  <p className="text-sm text-muted-foreground/80 mt-1">
-                    Start crawling to collect documentation URLs
-                  </p>
+                <div className="flex flex-col items-center justify-center py-8">
+                  <p className="text-sm text-muted-foreground">No URLs found</p>
                 </div>
               ) : (
                 <div className="py-1">
-                  {filteredUrls.map((url, index) => (
-                    <motion.div
-                      key={url.id}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.03, duration: 0.2 }}
-                      className={`
-                        flex items-center px-4 py-2.5 gap-3 hover:bg-muted/40 transition-colors
-                        ${
-                          index !== filteredUrls.length - 1
-                            ? "border-b border-border/30"
-                            : ""
-                        }
-                      `}
-                    >
-                      <Checkbox
-                        checked={selectedUrls.includes(url.id)}
-                        onCheckedChange={() => handleUrlSelectionChange(url.id)}
-                        className="glass-surface"
-                      />
-
-                      <div className="flex-1 overflow-hidden">
-                        <div className="text-sm truncate">{url.url}</div>
-                      </div>
-
-                      <div className="flex shrink-0 items-center gap-2">
-                        {getStatusBadge(url.status)}
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 rounded-full"
-                          onClick={() => handleOpenUrlDetails(url.id)}
-                          disabled={isLoadingDetails}
-                        >
-                          {isLoadingDetails ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <ExternalLink className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </motion.div>
+                  {paginatedUrls.map((url, index) => (
+                    <UrlListItem key={url.id} url={url} index={index} />
                   ))}
                 </div>
               )}
             </ScrollArea>
+
+            {/* Pagination section at the bottom of the component */}
+            <div className="flex flex-col sm:flex-row justify-between items-center mt-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(filteredUrls.length / itemsPerPage)}
+                totalItems={filteredUrls.length}
+                pageSize={itemsPerPage}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handleItemsPerPageChange}
+                pageSizeOptions={[10, 25, 50, 100]}
+                className="w-full"
+              />
+            </div>
           </GlassContainer>
         </div>
       </GlassContainer>
 
       {/* URL Details Dialog */}
-      <Dialog open={isUrlDetailsOpen} onOpenChange={setIsUrlDetailsOpen}>
+      <Dialog open={isUrlDetailsOpen} onOpenChange={handleCloseDetails}>
         <DialogContent className="glass-abyss sm:max-w-[600px] md:max-w-[800px] h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>URL Details</DialogTitle>
@@ -572,17 +567,19 @@ export function UrlProcessing() {
             {selectedUrlDetails && (
               <div className="space-y-4">
                 <div className="p-2 bg-muted/30 rounded-md">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-start gap-2">
                     <a
                       href={selectedUrlDetails.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary hover:underline flex items-center gap-1"
+                      className="text-primary hover:underline flex items-start gap-1 break-all mr-2 flex-1"
                     >
                       {selectedUrlDetails.url}
-                      <ExternalLink className="h-3 w-3" />
+                      <ExternalLink className="h-3 w-3 flex-shrink-0 mt-1" />
                     </a>
-                    {getStatusBadge(selectedUrlDetails.status)}
+                    <div className="flex-shrink-0">
+                      {getStatusBadge(selectedUrlDetails.status)}
+                    </div>
                   </div>
                 </div>
 

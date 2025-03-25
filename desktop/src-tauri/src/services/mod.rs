@@ -25,8 +25,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use tauri::AppHandle;
-use tokio::sync::mpsc;
 use uuid::Uuid;
 
 /// Technical information about a technology being processed
@@ -94,48 +92,43 @@ impl Task {
 /// Worker pool for executing tasks in the background
 #[derive(Debug)]
 pub struct WorkerPool {
-    workers: Vec<tauri::async_runtime::JoinHandle<()>>,
-    sender: mpsc::Sender<Task>,
+    sender: flume::Sender<Task>,
     active_tasks: Arc<RwLock<HashMap<String, Task>>>,
     cancellation_flags: Arc<RwLock<HashMap<String, Arc<Mutex<bool>>>>>,
     event_emitter: Arc<EventEmitter>,
-    app_handle: AppHandle,
 }
 
 impl WorkerPool {
-    pub fn new(app_handle: AppHandle, event_emitter: Arc<EventEmitter>) -> Self {
-        let (sender, receiver) = mpsc::channel::<Task>(100);
+    pub fn new(event_emitter: Arc<EventEmitter>) -> Self {
+        // Use flume instead of mpsc for more efficient work-stealing pattern
+        let (sender, receiver) = flume::unbounded::<Task>();
         let active_tasks = Arc::new(RwLock::new(HashMap::<String, Task>::new()));
         let cancellation_flags = Arc::new(RwLock::new(HashMap::<String, Arc<Mutex<bool>>>::new()));
 
-        // Wrap the receiver in Arc<Mutex<>> for shared access
-        let receiver = Arc::new(tokio::sync::Mutex::new(receiver));
-
-        // Determine number of workers based on CPU cores
+        // Use more worker threads than CPU cores to improve parallelism with I/O operations
+        // The optimal ratio depends on the application's workload - for web crawling which is
+        // heavily I/O bound, using more threads than cores improves throughput
         let num_cores = std::thread::available_parallelism()
             .map(NonZeroUsize::get)
             .unwrap_or(1);
 
-        let mut workers = Vec::with_capacity(num_cores);
+        // Create workers based on available cores, with more threads for better I/O parallelism
+        // For 8 cores, this will create 16 workers, balancing CPU usage and I/O waiting
 
         // Create worker tasks
         for worker_id in 0..num_cores {
-            // Create a new channel for each worker
-            let worker_sender = sender.clone();
+            // Each worker gets its own clone of the receiver
             let worker_receiver = receiver.clone();
             let worker_event_emitter = event_emitter.clone();
             let worker_active_tasks = active_tasks.clone();
             let worker_cancellation_flags = cancellation_flags.clone();
-            let worker_app_handle = app_handle.clone();
 
-            let handle = tauri::async_runtime::spawn(async move {
+            // Spawn the worker task
+            tauri::async_runtime::spawn(async move {
                 println!("Worker {worker_id} started");
 
-                while let Some(task) = {
-                    // Lock the mutex to access the receiver
-                    let mut recv = worker_receiver.lock().await;
-                    recv.recv().await
-                } {
+                // Workers can efficiently pull tasks without mutex contention
+                while let Ok(task) = worker_receiver.recv_async().await {
                     // Skip if task is already cancelled before processing
                     if let Some(cancel_flag) =
                         worker_cancellation_flags.read().unwrap().get(&task.id)
@@ -234,8 +227,6 @@ impl WorkerPool {
                                 // Extract parameters from task payload
                                 let url_id = task.payload.url_id;
 
-                                // Only process if we have a valid URL ID
-
                                 // Update task status to processing
                                 if let Err(e) = worker_event_emitter.emit_task_updated(
                                     &task.id,
@@ -248,8 +239,50 @@ impl WorkerPool {
                                 // Get the URL from the database
                                 match services.documentation_urls.get_url_by_id(url_id).await {
                                     Ok(Some(url_obj)) => {
-                                        // Check if the URL has markdown content
-                                        if let Some(markdown) = &url_obj.markdown {
+                                        // Check if the URL has markdown or HTML content - Allow URLs with error status
+                                        let has_content =
+                                            url_obj.html.is_some() || url_obj.markdown.is_some();
+
+                                        if has_content {
+                                            // Choose source content - prefer markdown if available
+                                            let source_content = if let Some(markdown) =
+                                                &url_obj.markdown
+                                            {
+                                                markdown.clone()
+                                            } else if let Some(html) = &url_obj.html {
+                                                // Convert HTML to markdown
+                                                match services
+                                                    .crawler
+                                                    .convert_html_to_markdown(&html)
+                                                {
+                                                    Ok(md) => md,
+                                                    Err(e) => {
+                                                        // Error converting HTML to markdown
+                                                        if let Err(e) = worker_event_emitter.emit_task_error(
+                                                            &task.id,
+                                                            &format!("Failed to convert HTML to markdown: {}", e),
+                                                        ) {
+                                                            eprintln!("Error emitting task error event: {}", e);
+                                                        }
+                                                        continue;
+                                                    }
+                                                }
+                                            } else {
+                                                // No content available (should not happen due to earlier check)
+                                                if let Err(e) = worker_event_emitter
+                                                    .emit_task_error(
+                                                        &task.id,
+                                                        "No content available to clean",
+                                                    )
+                                                {
+                                                    eprintln!(
+                                                        "Error emitting task error event: {}",
+                                                        e
+                                                    );
+                                                }
+                                                continue;
+                                            };
+
                                             // Update progress
                                             if let Err(e) = worker_event_emitter.emit_task_updated(
                                                 &task.id,
@@ -259,131 +292,203 @@ impl WorkerPool {
                                                 eprintln!("Error updating task progress: {}", e);
                                             }
 
-                                            // Use the intelligence service to clean markdown
-                                            match services
-                                                .intelligence
-                                                .cleanup_markdown(markdown)
-                                                .await
-                                            {
-                                                Ok(clean_markdown) => {
-                                                    // Update progress
-                                                    if let Err(e) = worker_event_emitter
-                                                        .emit_task_updated(
-                                                            &task.id,
-                                                            80,
-                                                            "saving_cleaned_markdown",
-                                                        )
-                                                    {
-                                                        eprintln!(
-                                                            "Error updating task progress: {}",
-                                                            e
-                                                        );
-                                                    }
+                                            // Use the intelligence service to clean markdown with retry logic
+                                            let mut attempts = 0;
+                                            const MAX_RETRY_ATTEMPTS: usize = 5;
+                                            let mut delay_ms: u64 = 1000; // Start with 1s delay
 
-                                                    // Save cleaned markdown to database
-                                                    if let Err(e) = services
-                                                        .documentation_urls
-                                                        .update_url_cleaned_markdown(
-                                                            url_id,
-                                                            &clean_markdown,
-                                                        )
-                                                        .await
-                                                    {
-                                                        eprintln!(
-                                                            "Error saving cleaned markdown: {}",
-                                                            e
-                                                        );
-
-                                                        // Emit error event
-                                                        if let Err(e) = worker_event_emitter.emit_task_error(
-                                                                &task.id,
-                                                                &format!("Failed to save cleaned markdown: {}", e),
-                                                            ) {
-                                                                eprintln!("Error emitting task error: {}", e);
-                                                            }
-                                                    } else {
-                                                        // Update URL status
+                                            loop {
+                                                attempts += 1;
+                                                match services
+                                                    .intelligence
+                                                    .cleanup_markdown(&source_content)
+                                                    .await
+                                                {
+                                                    Ok(clean_markdown) => {
+                                                        // Update progress
                                                         if let Err(e) = worker_event_emitter
-                                                            .emit_url_status_updated(
-                                                                &url_id,
-                                                                "markdown_cleaned",
+                                                            .emit_task_updated(
+                                                                &task.id,
+                                                                80,
+                                                                "saving_cleaned_markdown",
                                                             )
                                                         {
-                                                            eprintln!("Error emitting URL status update: {}", e);
-                                                        }
-
-                                                        // Emit completion event
-                                                        if let Err(e) = worker_event_emitter
-                                                            .emit_task_completed(
-                                                                &task.id,
-                                                                TaskCompletedResult {
-                                                                    snippets_count: None,
-                                                                    url_id: Uuid::nil(),
-                                                                },
-                                                            )
-                                                        {
-                                                            eprintln!("Error emitting task completed event: {}", e);
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    eprintln!(
-                                                        "Error cleaning markdown for URL {}: {}",
-                                                        url_id, e
-                                                    );
-
-                                                    // Emit error event
-                                                    if let Err(e) = worker_event_emitter
-                                                        .emit_task_error(
-                                                            &task.id,
-                                                            &format!(
-                                                                "Failed to clean markdown: {}",
+                                                            eprintln!(
+                                                                "Error updating task progress: {}",
                                                                 e
-                                                            ),
-                                                        )
-                                                    {
-                                                        eprintln!(
-                                                            "Error emitting task error: {}",
-                                                            e
-                                                        );
+                                                            );
+                                                        }
+
+                                                        // Save cleaned markdown to database
+                                                        match services
+                                                            .documentation_urls
+                                                            .update_url_cleaned_markdown(
+                                                                url_id,
+                                                                &clean_markdown,
+                                                            )
+                                                            .await
+                                                        {
+                                                            Ok(_) => {
+                                                                // Set URL status to markdown_ready regardless of previous error status
+                                                                match services.documentation_urls
+                                                                    .update_url_status(
+                                                                        url_id,
+                                                                        crate::db::models::UrlStatus::MarkdownReady,
+                                                                    )
+                                                                    .await
+                                                                {
+                                                                    Ok(_) => {
+                                                                        // Update URL status
+                                                                        if let Err(e) = worker_event_emitter
+                                                                            .emit_url_status_updated(
+                                                                                &url_id,
+                                                                                "markdown_ready",
+                                                                            )
+                                                                        {
+                                                                            eprintln!("Error emitting URL status update: {}", e);
+                                                                        }
+
+                                                                        // Emit completion event
+                                                                        if let Err(e) = worker_event_emitter
+                                                                            .emit_task_completed(
+                                                                                &task.id,
+                                                                                TaskCompletedResult {
+                                                                                    snippets_count: None,
+                                                                                    url_id,
+                                                                                },
+                                                                            )
+                                                                        {
+                                                                            eprintln!("Error emitting task completed event: {}", e);
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        eprintln!("Error updating URL status: {}", e);
+                                                                        if let Err(e) = worker_event_emitter.emit_task_error(
+                                                                            &task.id,
+                                                                            &format!("Failed to update URL status: {}", e),
+                                                                        ) {
+                                                                            eprintln!("Error emitting task error event: {}", e);
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                eprintln!("Error saving cleaned markdown: {}", e);
+                                                                if let Err(e) = worker_event_emitter.emit_task_error(
+                                                                    &task.id,
+                                                                    &format!("Failed to save cleaned markdown: {}", e),
+                                                                ) {
+                                                                    eprintln!("Error emitting task error event: {}", e);
+                                                                }
+                                                            }
+                                                        }
+
+                                                        // Successfully processed, break out of retry loop
+                                                        break;
+                                                    }
+                                                    Err(e) => {
+                                                        // Check for rate limiting error and retry if needed
+                                                        if (e.contains("rate limit")
+                                                            || e.contains("Too Many Requests"))
+                                                            && attempts < MAX_RETRY_ATTEMPTS
+                                                        {
+                                                            // Update task status to waiting for retry
+                                                            if let Err(e) = worker_event_emitter
+                                                                .emit_task_updated(
+                                                                    &task.id,
+                                                                    40,
+                                                                    &format!(
+                                                                        "rate_limited_retry_{}",
+                                                                        attempts
+                                                                    ),
+                                                                )
+                                                            {
+                                                                eprintln!("Error updating task progress: {}", e);
+                                                            }
+
+                                                            // Log the retry attempt
+                                                            println!(
+                                                                "Rate limit hit, retrying attempt {}/{} after {}ms delay",
+                                                                attempts,
+                                                                MAX_RETRY_ATTEMPTS,
+                                                                delay_ms
+                                                            );
+
+                                                            // Wait with exponential backoff
+                                                            tokio::time::sleep(
+                                                                std::time::Duration::from_millis(
+                                                                    delay_ms,
+                                                                ),
+                                                            )
+                                                            .await;
+
+                                                            // Increase delay for next attempt (exponential backoff)
+                                                            delay_ms =
+                                                                std::cmp::min(delay_ms * 2, 30000); // Cap at 30 seconds
+
+                                                            // Continue to next retry attempt
+                                                            continue;
+                                                        } else {
+                                                            // Non-rate limit error or max retries reached
+                                                            eprintln!("Error cleaning markdown after {} attempts: {}", attempts, e);
+
+                                                            // Only update status to error if we don't already have cleaned markdown
+                                                            if url_obj.cleaned_markdown.is_none() {
+                                                                // Mark as error since we couldn't clean
+                                                                if let Err(status_err) = services.documentation_urls
+                                                                    .update_url_status(
+                                                                        url_id,
+                                                                        crate::db::models::UrlStatus::MarkdownError,
+                                                                    )
+                                                                    .await
+                                                                {
+                                                                    eprintln!("Error updating URL status: {}", status_err);
+                                                                }
+                                                            }
+
+                                                            if let Err(e) = worker_event_emitter
+                                                                .emit_task_error(
+                                                                    &task.id,
+                                                                    &format!(
+                                                                    "Failed to clean markdown: {}",
+                                                                    e
+                                                                ),
+                                                                )
+                                                            {
+                                                                eprintln!("Error emitting task error event: {}", e);
+                                                            }
+
+                                                            break;
+                                                        }
                                                     }
                                                 }
                                             }
                                         } else {
-                                            // No markdown content
-                                            eprintln!("URL {} has no markdown content", url_id);
-
-                                            // Emit error event
+                                            // No content to clean
                                             if let Err(e) = worker_event_emitter.emit_task_error(
                                                 &task.id,
-                                                &format!("URL {} has no markdown content", url_id),
+                                                "No content available to clean",
                                             ) {
-                                                eprintln!("Error emitting task error: {}", e);
+                                                eprintln!("Error emitting task error event: {}", e);
                                             }
                                         }
                                     }
                                     Ok(None) => {
                                         // URL not found
-                                        eprintln!("URL {} not found", url_id);
-
-                                        // Emit error event
                                         if let Err(e) = worker_event_emitter.emit_task_error(
                                             &task.id,
-                                            &format!("URL {} not found", url_id),
+                                            &format!("URL with ID {} not found", url_id),
                                         ) {
-                                            eprintln!("Error emitting task error: {}", e);
+                                            eprintln!("Error emitting task error event: {}", e);
                                         }
                                     }
                                     Err(e) => {
                                         // Database error
-                                        eprintln!("Error getting URL {}: {}", url_id, e);
-
-                                        // Emit error event
                                         if let Err(e) = worker_event_emitter.emit_task_error(
                                             &task.id,
                                             &format!("Database error: {}", e),
                                         ) {
-                                            eprintln!("Error emitting task error: {}", e);
+                                            eprintln!("Error emitting task error event: {}", e);
                                         }
                                     }
                                 }
@@ -391,8 +496,6 @@ impl WorkerPool {
                             "generate_snippets" => {
                                 // Extract parameters from task payload
                                 let url_id = task.payload.url_id;
-
-                                // Only process if we have a valid URL ID
 
                                 // Update task status to processing
                                 if let Err(e) = worker_event_emitter.emit_task_updated(
@@ -406,155 +509,115 @@ impl WorkerPool {
                                 // Get the URL from the database
                                 match services.documentation_urls.get_url_by_id(url_id).await {
                                     Ok(Some(url_obj)) => {
-                                        // Check if the URL has cleaned markdown content
-                                        let markdown = match &url_obj.cleaned_markdown {
-                                            Some(clean_md) => clean_md,
-                                            None => match &url_obj.markdown {
-                                                Some(raw_md) => raw_md, // Fall back to raw markdown
-                                                None => {
-                                                    // No markdown content
-                                                    eprintln!(
-                                                        "URL {} has no markdown content",
-                                                        url_id
-                                                    );
-
-                                                    // Emit error event
-                                                    if let Err(e) = worker_event_emitter.emit_task_error(
-                                                            &task.id,
-                                                            &format!("URL {} has no markdown content for AI processing", url_id),
-                                                        ) {
-                                                            eprintln!("Error emitting task error: {}", e);
-                                                        }
-
-                                                    continue;
-                                                }
-                                            },
-                                        };
-
-                                        // Update progress
-                                        if let Err(e) = worker_event_emitter.emit_task_updated(
-                                            &task.id,
-                                            40,
-                                            "processing_documentation",
-                                        ) {
-                                            eprintln!("Error updating task progress: {}", e);
-                                        }
-
-                                        // Update progress - preparing to process snippets
-                                        if let Err(e) = worker_event_emitter.emit_task_updated(
-                                            &task.id,
-                                            50,
-                                            "preparing_snippets",
-                                        ) {
-                                            eprintln!("Error updating task progress: {}", e);
-                                        }
-
-                                        let (tech, ver) = match get_services()
+                                        // Get the technology and version for this URL
+                                        match services
                                             .documentation_urls
                                             .get_tech_and_version_for_url(url_id)
                                             .await
                                         {
-                                            Ok((technology, version)) => (technology, version),
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "Error getting technology and version: {}",
-                                                    e
-                                                );
+                                            Ok((tech, ver)) => {
+                                                // Update progress
                                                 if let Err(e) = worker_event_emitter
-                                                    .emit_task_error(
+                                                    .emit_task_updated(
                                                         &task.id,
-                                                        &format!(
-                                                        "Error getting technology and version: {}",
-                                                        e
-                                                    ),
+                                                        40,
+                                                        "processing_documentation",
                                                     )
                                                 {
-                                                    eprintln!("Error emitting task error: {}", e);
-                                                }
-                                                continue;
-                                            }
-                                        };
-
-                                        // Extract tech info from task payload
-
-                                        // Create a DocumentationServiceHelper struct that can emit events
-                                        let doc_service_helper = DocumentationServiceHelper {
-                                            task_id: task.id.clone(),
-                                            url_id,
-                                            event_emitter: worker_event_emitter.clone(),
-                                        };
-
-                                        // Use the documentation service to process the URL into snippets
-                                        // The helper will handle progress updates during processing
-                                        let result = services
-                                            .documentation
-                                            .process_url_to_snippets_with_progress(
-                                                url_id,
-                                                &tech,
-                                                &ver,
-                                                Some(&doc_service_helper),
-                                            )
-                                            .await;
-
-                                        match result {
-                                            Ok(snippet_ids) => {
-                                                // Emit completion event with snippet count
-                                                let task_result = TaskCompletedResult {
-                                                    snippets_count: Some(snippet_ids.len()),
-                                                    url_id,
-                                                };
-                                                if let Err(e) = worker_event_emitter
-                                                    .emit_task_completed(&task.id, task_result)
-                                                {
                                                     eprintln!(
-                                                        "Error emitting task completion: {}",
+                                                        "Error updating task progress: {}",
                                                         e
                                                     );
                                                 }
+
+                                                // Create helper for progress updates
+                                                let helper = DocumentationServiceHelper {
+                                                    task_id: task.id.clone(),
+                                                    url_id,
+                                                    event_emitter: worker_event_emitter.clone(),
+                                                };
+
+                                                // Process URL into snippets
+                                                match services
+                                                    .documentation
+                                                    .process_url_to_snippets_with_progress(
+                                                        url_id,
+                                                        &tech,
+                                                        &ver,
+                                                        Some(&helper),
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(snippet_ids) => {
+                                                        // Emit completion event with snippet count
+                                                        if let Err(e) = worker_event_emitter
+                                                            .emit_task_completed(
+                                                                &task.id,
+                                                                TaskCompletedResult {
+                                                                    snippets_count: Some(
+                                                                        snippet_ids.len(),
+                                                                    ),
+                                                                    url_id,
+                                                                },
+                                                            )
+                                                        {
+                                                            eprintln!("Error emitting task completion: {}", e);
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        eprintln!(
+                                                            "Error processing snippets: {}",
+                                                            e
+                                                        );
+                                                        if let Err(e) = worker_event_emitter
+                                                            .emit_task_error(
+                                                                &task.id,
+                                                                &format!(
+                                                                "Failed to process snippets: {}",
+                                                                e
+                                                            ),
+                                                            )
+                                                        {
+                                                            eprintln!("Error emitting task error event: {}", e);
+                                                        }
+                                                    }
+                                                }
                                             }
                                             Err(e) => {
-                                                eprintln!(
-                                                    "Error generating snippets for URL {}: {}",
-                                                    url_id, e
-                                                );
-
-                                                // Emit error event
+                                                eprintln!("Error getting tech and version: {}", e);
                                                 if let Err(e) = worker_event_emitter
                                                     .emit_task_error(
                                                         &task.id,
                                                         &format!(
-                                                            "Failed to generate snippets: {}",
+                                                            "Failed to get tech and version: {}",
                                                             e
                                                         ),
                                                     )
                                                 {
-                                                    eprintln!("Error emitting task error: {}", e);
+                                                    eprintln!(
+                                                        "Error emitting task error event: {}",
+                                                        e
+                                                    );
                                                 }
                                             }
                                         }
                                     }
                                     Ok(None) => {
                                         // URL not found
-                                        eprintln!("URL {} not found", url_id);
-
-                                        // Emit error event
                                         if let Err(e) = worker_event_emitter.emit_task_error(
                                             &task.id,
-                                            &format!("URL {} not found", url_id),
+                                            &format!("URL with ID {} not found", url_id),
                                         ) {
-                                            eprintln!("Error emitting task error: {}", e);
+                                            eprintln!("Error emitting task error event: {}", e);
                                         }
                                     }
                                     Err(e) => {
                                         // Database error
-                                        eprintln!("Error getting URL {}: {}", url_id, e);
-
-                                        // Emit error event
                                         if let Err(e) = worker_event_emitter.emit_task_error(
                                             &task.id,
                                             &format!("Database error: {}", e),
                                         ) {
-                                            eprintln!("Error emitting task error: {}", e);
+                                            eprintln!("Error emitting task error event: {}", e);
                                         }
                                     }
                                 }
@@ -562,25 +625,6 @@ impl WorkerPool {
                             // Default case for unknown task types
                             _ => {
                                 println!("Unknown task type: {}", task.task_type);
-                                // Simulate generic work for unknown task types
-                                for i in 1..=10 {
-                                    if should_cancel() {
-                                        break;
-                                    }
-
-                                    // Update progress
-                                    if let Err(e) = worker_event_emitter.emit_task_updated(
-                                        &task.id,
-                                        i * 10,
-                                        "running",
-                                    ) {
-                                        eprintln!("Error updating task progress: {}", e);
-                                    }
-
-                                    // Simulate work
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(100))
-                                        .await;
-                                }
                             }
                         }
                     }
@@ -593,11 +637,13 @@ impl WorkerPool {
                         }
                     } else {
                         // Emit completed event
+                        // Use task.payload.url_id instead of Uuid::nil() if available
+                        let url_id = task.payload.url_id; // Use the actual URL ID from the task payload
                         if let Err(e) = worker_event_emitter.emit_task_completed(
                             &task.id,
                             TaskCompletedResult {
                                 snippets_count: None,
-                                url_id: Uuid::nil(),
+                                url_id,
                             },
                         ) {
                             eprintln!("Error emitting task completed event: {}", e);
@@ -609,19 +655,15 @@ impl WorkerPool {
                     worker_cancellation_flags.write().unwrap().remove(&task.id);
                 }
 
-                println!("Worker {worker_id} shutting down");
+                println!("Worker shutting down");
             });
-
-            workers.push(handle);
         }
 
         Self {
-            workers,
             sender,
             active_tasks,
             cancellation_flags,
             event_emitter: event_emitter.clone(),
-            app_handle: app_handle.clone(),
         }
     }
 
@@ -635,8 +677,8 @@ impl WorkerPool {
             eprintln!("Error emitting task created event: {}", e);
         }
 
-        // Send task to worker
-        if let Err(_) = self.sender.send(task.clone()).await {
+        // Send task to worker pool via flume
+        if let Err(_) = self.sender.send_async(task.clone()).await {
             return Err("Failed to send task to worker".into());
         }
 
@@ -650,7 +692,7 @@ impl WorkerPool {
             *cancel_flag.lock().unwrap() = true;
 
             // Update task status in active tasks
-            if let Some(mut task) = self.active_tasks.write().unwrap().get_mut(task_id) {
+            if let Some(task) = self.active_tasks.write().unwrap().get_mut(task_id) {
                 task.status = TaskStatus::Cancelled;
             }
 
@@ -661,13 +703,14 @@ impl WorkerPool {
     }
 
     /// Get the status of a task
-    pub fn get_task_status(&self, task_id: &str) -> Option<TaskStatus> {
-        self.active_tasks
-            .read()
-            .unwrap()
-            .get(task_id)
-            .map(|task| task.status.clone())
-    }
+    // This method is not currently used in the codebase and is kept commented to avoid warnings
+    // pub fn get_task_status(&self, task_id: &str) -> Option<TaskStatus> {
+    //     self.active_tasks
+    //         .read()
+    //         .unwrap()
+    //         .get(task_id)
+    //         .map(|task| task.status.clone())
+    // }
 
     /// Get all active tasks
     pub fn get_active_tasks(&self) -> Vec<Task> {
@@ -727,12 +770,11 @@ pub struct Services {
     pub crawler: CrawlerService,
     pub event_emitter: Arc<EventEmitter>,
     pub worker_pool: WorkerPool,
-    pub app_handle: AppHandle,
 }
 
 impl Services {
-    pub fn new(app_handle: AppHandle, event_emitter: Arc<EventEmitter>) -> Self {
-        let worker_pool = WorkerPool::new(app_handle.clone(), event_emitter.clone());
+    pub fn new(event_emitter: Arc<EventEmitter>) -> Self {
+        let worker_pool = WorkerPool::new(event_emitter.clone());
 
         Services {
             documentation: DocumentationService::new(),
@@ -745,14 +787,13 @@ impl Services {
             crawler: CrawlerService::new(),
             event_emitter: event_emitter.clone(),
             worker_pool,
-            app_handle: app_handle.clone(),
         }
     }
 
     // Initialize service with event emitter - should be called during app setup
-    pub fn initialize(app_handle: AppHandle, event_emitter: EventEmitter) {
+    pub fn initialize(event_emitter: EventEmitter) {
         let event_emitter = Arc::new(event_emitter);
-        let services = Self::new(app_handle, event_emitter);
+        let services = Self::new(event_emitter);
         SERVICES.set(services).expect("Failed to set services");
     }
 }

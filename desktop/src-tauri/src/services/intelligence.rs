@@ -60,14 +60,14 @@ pub enum ModelType {
     Chat(ChatModel),
 }
 
-impl ModelType {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Embedding(model) => model.as_str(),
-            Self::Chat(model) => model.as_str(),
-        }
-    }
-}
+// impl ModelType {
+//     pub fn as_str(&self) -> &str {
+//         match self {
+//             Self::Embedding(model) => model.as_str(),
+//             Self::Chat(model) => model.as_str(),
+//         }
+//     }
+// }
 
 /// Service for AI operations like text chunking, embeddings generation, and chat#[derive(Debug)]
 // We need to implement Debug manually because CoreBPE doesn't implement Debug
@@ -169,12 +169,14 @@ impl IntelligenceService {
         }
 
         let dimension = self.embedding_dimension;
-        let mut mean = vec![0.0; dimension];
+        let mut mean = vec![0.0_f32; dimension]; // Explicitly use f32
 
         // Sum all embeddings
         for embedding in embeddings {
             for (i, &value) in embedding.iter().enumerate() {
-                mean[i] += value;
+                if i < dimension {
+                    mean[i] += value;
+                }
             }
         }
 
@@ -184,7 +186,9 @@ impl IntelligenceService {
             *value /= count;
         }
 
-        mean
+        // Final check to ensure all values are 32-bit floats
+        let checked_mean: Vec<f32> = mean; // Already f32, explicit type for clarity
+        checked_mean
     }
 
     /// Creates a single embedding for the given text
@@ -192,7 +196,7 @@ impl IntelligenceService {
         let client = Client::new();
         let request = CreateEmbeddingRequest {
             model: self.embedding_model.to_string(),
-            dimensions: Some(self.embedding_dimension as u32),
+            dimensions: Some(2000),
             input: EmbeddingInput::String(text.to_string()),
             ..Default::default()
         };
@@ -203,7 +207,21 @@ impl IntelligenceService {
             .await
             .expect("Failed to create embedding");
 
-        response.data[0].embedding.clone()
+        // The OpenAI API returns f64 values by default, but we need f32 for pgvector
+        // Convert to f32 explicitly to ensure compatibility with pgvector
+        let embedding_f32: Vec<f32> = response.data[0]
+            .embedding
+            .clone()
+            .into_iter()
+            .map(|v| v as f32) // Explicit conversion to f32
+            .collect();
+
+        // Simple check to ensure we have f32 values
+        if !embedding_f32.is_empty() {
+            println!("First embedding value type check: {}", embedding_f32[0]);
+        }
+
+        embedding_f32
     }
 
     /// Creates embeddings for text, handling chunking and averaging
@@ -225,10 +243,15 @@ impl IntelligenceService {
         let mut embeddings = Vec::with_capacity(chunks.len());
         for chunk in chunks {
             let embedding = self.create_single_embedding(&chunk).await;
+            // Force explicit conversion to guarantee f32 values
+            let embedding: Vec<f32> = embedding
+                .into_iter()
+                .map(|v| v as f32) // Explicit cast to ensure f32
+                .collect();
             embeddings.push(embedding);
         }
 
-        // Return mean embedding
+        // Return mean embedding - ensure f32 precision
         self.calculate_mean_embedding(&embeddings)
     }
 
@@ -298,15 +321,23 @@ impl IntelligenceService {
             
             Return only the cleaned Markdown with no explanations or other text.";
 
-        // Rest of the implementation remains the same
+        // Split content into chunks to stay within token limits
         let chunks = self.chunk_text(
             None,
             ModelType::Chat(ChatModel::Gpt4oMini),
             unclean_markdown.to_string(),
         );
+
+        println!("Cleaning markdown: Split into {} chunks", chunks.len());
         let mut clean_markdown = String::new();
 
-        for chunk in chunks {
+        for (i, chunk) in chunks.iter().enumerate() {
+            println!(
+                "Processing chunk {}/{} with {} characters",
+                i + 1,
+                chunks.len(),
+                chunk.len()
+            );
             let messages = self.chat_messages(system_content, &chunk);
 
             match self.chat_completion(messages, None).await {
@@ -314,11 +345,24 @@ impl IntelligenceService {
                     if let Some(choice) = response.choices.first() {
                         if let Some(content) = &choice.message.content {
                             clean_markdown.push_str(content);
+                            println!("Successfully processed chunk {}", i + 1);
+                        } else {
+                            println!("Warning: Chunk {} returned empty content", i + 1);
                         }
                     }
                 }
                 Err(error_msg) => {
-                    return Err(format!("Error cleaning markdown: {}", error_msg));
+                    // Provide more specific error that includes rate limit information
+                    let error_detail = if error_msg.contains("429")
+                        || error_msg.to_lowercase().contains("too many requests")
+                    {
+                        format!("Rate limit exceeded: {}", error_msg)
+                    } else {
+                        format!("API error: {}", error_msg)
+                    };
+
+                    println!("Error processing chunk {}: {}", i + 1, error_detail);
+                    return Err(error_detail);
                 }
             }
         }
@@ -326,6 +370,10 @@ impl IntelligenceService {
         if clean_markdown.is_empty() {
             Err("No content was generated from the API".to_string())
         } else {
+            println!(
+                "Successfully cleaned markdown: {} characters",
+                clean_markdown.len()
+            );
             Ok(clean_markdown)
         }
     }
@@ -423,9 +471,20 @@ impl IntelligenceService {
             clean_markdown.to_string(),
         );
 
+        println!(
+            "Generating snippets: Split into {} chunks",
+            markdown_chunks.len()
+        );
         let mut all_snippets = Vec::new();
 
         for (chunk_index, chunk) in markdown_chunks.iter().enumerate() {
+            println!(
+                "Processing chunk {}/{} with {} characters",
+                chunk_index + 1,
+                markdown_chunks.len(),
+                chunk.len()
+            );
+
             // Create a user message that includes chunk information if there are multiple chunks
             let chunk_info = if markdown_chunks.len() > 1 {
                 format!("This is part {}/{} of the documentation. Process it into comprehensive snippets.",
@@ -445,45 +504,97 @@ impl IntelligenceService {
 
             let messages = self.chat_messages(system_content, &user_content);
 
-            match self
-                .chat_completion(messages, Some(json_schema.clone()))
-                .await
-            {
-                Ok(response) => {
-                    let content = match &response.choices[0].message.content {
-                        Some(content) => content,
-                        None => continue, // Skip empty responses
-                    };
+            // Apply retry logic for rate limits
+            const MAX_RETRY_ATTEMPTS: usize = 5;
+            let mut attempts = 0;
+            let mut delay_ms: u64 = 1000; // Start with 1s delay
 
-                    match serde_json::from_str::<serde_json::Value>(content) {
-                        Ok(json_response) => {
-                            if let Some(snippets_array) =
-                                json_response.get("snippets").and_then(|v| v.as_array())
-                            {
-                                // Add all snippets from this chunk to our collection
-                                for snippet in snippets_array {
-                                    all_snippets.push(snippet.clone());
+            loop {
+                attempts += 1;
+                match self
+                    .chat_completion(messages.clone(), Some(json_schema.clone()))
+                    .await
+                {
+                    Ok(response) => {
+                        println!("Successfully processed snippet chunk {}", chunk_index + 1);
+                        let content = match &response.choices[0].message.content {
+                            Some(content) => content,
+                            None => {
+                                println!("Warning: Empty response for chunk {}", chunk_index + 1);
+                                break; // Skip this chunk and continue with others
+                            }
+                        };
+
+                        match serde_json::from_str::<serde_json::Value>(content) {
+                            Ok(json_response) => {
+                                if let Some(snippets_array) =
+                                    json_response.get("snippets").and_then(|v| v.as_array())
+                                {
+                                    // Add all snippets from this chunk to our collection
+                                    println!(
+                                        "Found {} snippets in chunk {}",
+                                        snippets_array.len(),
+                                        chunk_index + 1
+                                    );
+                                    for snippet in snippets_array {
+                                        all_snippets.push(snippet.clone());
+                                    }
                                 }
+                                break; // Successfully processed this chunk
+                            }
+                            Err(e) => {
+                                // Log the error but continue with other chunks
+                                eprintln!(
+                                    "Failed to parse JSON from chunk {}: {}",
+                                    chunk_index + 1,
+                                    e
+                                );
+                                eprintln!("Raw content: {}", content);
+                                break; // Move on to the next chunk even if parsing failed
                             }
                         }
-                        Err(e) => {
-                            // Log the error but continue with other chunks
-                            eprintln!("Failed to parse JSON from chunk {}: {}", chunk_index + 1, e);
-                            eprintln!("Raw content: {}", content);
+                    }
+                    Err(error_msg) => {
+                        // Check for rate limiting error
+                        if (error_msg.contains("rate limit")
+                            || error_msg.contains("429")
+                            || error_msg.to_lowercase().contains("too many requests"))
+                            && attempts < MAX_RETRY_ATTEMPTS
+                        {
+                            // Log the retry attempt
+                            println!(
+                                "Rate limit hit when generating snippets, retrying attempt {}/{} after {}ms delay",
+                                attempts,
+                                MAX_RETRY_ATTEMPTS,
+                                delay_ms
+                            );
+
+                            // Wait with exponential backoff
+                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+
+                            // Increase delay for next attempt (exponential backoff)
+                            delay_ms = std::cmp::min(delay_ms * 2, 30000); // Cap at 30 seconds
+
+                            // Continue to next retry attempt
+                            continue;
+                        } else {
+                            // Non-rate limit error or max retries reached
+                            eprintln!(
+                                "Error generating snippets for chunk {} after {} attempts: {}",
+                                chunk_index + 1,
+                                attempts,
+                                error_msg
+                            );
+
+                            // For non-rate limit errors, break and try next chunk
+                            break;
                         }
                     }
-                }
-                Err(error_msg) => {
-                    // Log error but continue with other chunks
-                    eprintln!(
-                        "Error generating snippets for chunk {}: {}",
-                        chunk_index + 1,
-                        error_msg
-                    );
                 }
             }
         }
 
+        println!("Generated {} total snippets", all_snippets.len());
         if all_snippets.is_empty() {
             Err("Failed to generate any valid snippets".to_string())
         } else {

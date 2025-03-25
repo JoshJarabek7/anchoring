@@ -5,11 +5,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useTechnologyStore } from "@/stores/technology-store";
 import { useUrlStore } from "@/stores/url-store";
-import { Filter, Loader2, Play, Save } from "lucide-react";
+import { Filter, Loader2, Play, RefreshCw, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Channel } from "@tauri-apps/api/core";
 import { CrawlEvent } from "@/types/events";
+import { motion } from "framer-motion";
 
 export function CrawlConfiguration() {
   const { selectedTechnology, selectedVersion } = useTechnologyStore();
@@ -32,6 +33,7 @@ export function CrawlConfiguration() {
   // Activity states
   const [isCrawling, setIsCrawling] = useState(false);
   const [isFiltering, setIsFiltering] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Load crawling settings when the selected version changes
   useEffect(() => {
@@ -48,17 +50,21 @@ export function CrawlConfiguration() {
         currentCrawlingSettings
       );
 
+      // Initialize form fields with values from backend or empty strings if null
       setPrefixPath(currentCrawlingSettings.prefixPath || "");
       setAntiPaths(currentCrawlingSettings.antiPaths || "");
       setAntiKeywords(currentCrawlingSettings.antiKeywords || "");
+      // Also initialize skipProcessed from backend or default to true
+      setSkipProcessed(currentCrawlingSettings.skipProcessed !== false);
 
       console.log("Setting form values:", {
         prefixPath: currentCrawlingSettings.prefixPath || "",
         antiPaths: currentCrawlingSettings.antiPaths || "",
         antiKeywords: currentCrawlingSettings.antiKeywords || "",
+        skipProcessed: currentCrawlingSettings.skipProcessed !== false,
       });
 
-      // If we don't have a start URL yet, use the prefix path
+      // If we don't have a start URL yet, use the prefix path if it exists
       if (!startUrl && currentCrawlingSettings.prefixPath) {
         setStartUrl(currentCrawlingSettings.prefixPath);
       }
@@ -71,6 +77,27 @@ export function CrawlConfiguration() {
     }
   }, [currentCrawlingSettings, startUrl, selectedVersion]);
 
+  // Handle refreshing crawl settings from the backend
+  const handleRefreshSettings = async () => {
+    if (!selectedVersion) return;
+
+    setIsRefreshing(true);
+    try {
+      await fetchCrawlingSettings(selectedVersion.id);
+      toast.success("Crawl settings refreshed", {
+        description: "Latest configuration loaded successfully",
+      });
+    } catch (error) {
+      console.error("Error refreshing crawl settings:", error);
+      toast.error("Failed to refresh settings", {
+        description:
+          error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Handle save settings
   const handleSaveSettings = async () => {
     if (!selectedVersion) return;
@@ -79,13 +106,15 @@ export function CrawlConfiguration() {
       console.log("Saving settings for version:", selectedVersion.id);
       console.log("Current crawling settings:", currentCrawlingSettings);
 
-      // Make sure we're passing all fields needed
+      // Prepare settings object properly
+      // Note: Backend expects empty strings to be sent as empty strings, not nulls
       const settings = {
         id: currentCrawlingSettings?.id,
         versionId: selectedVersion.id,
-        prefixPath: prefixPath || "",
-        antiPaths: antiPaths || "",
-        antiKeywords: antiKeywords || "",
+        prefixPath: prefixPath.trim(), // Trim to remove any leading/trailing whitespace
+        antiPaths: antiPaths.trim(),
+        antiKeywords: antiKeywords.trim(),
+        skipProcessed: skipProcessed, // Add skipProcessed to saved settings
       };
 
       console.log("Sending settings:", settings);
@@ -113,11 +142,14 @@ export function CrawlConfiguration() {
   const handleApplyFilters = async () => {
     if (!selectedVersion) return;
 
+    // Save current settings first to ensure the latest anti-keywords are used
+    await handleSaveSettings();
+
     setIsFiltering(true);
     try {
-      const skippedCount = await applyUrlFilters(selectedVersion.id);
+      const deletedCount = await applyUrlFilters(selectedVersion.id);
       toast.success("Filters applied", {
-        description: `${skippedCount} URLs have been marked as skipped`,
+        description: `${deletedCount} URLs have been deleted based on filter criteria`,
       });
     } catch (error) {
       console.error("Error applying filters:", error);
@@ -130,16 +162,52 @@ export function CrawlConfiguration() {
   const handleStartCrawling = async () => {
     if (!selectedTechnology || !selectedVersion || !startUrl) return;
 
+    console.log("🔵 CRAWL START: Beginning crawl request for", startUrl);
     setIsCrawling(true);
-    try {
-      // Save settings first
-      await handleSaveSettings();
 
+    // Create a flag to track if we've already reset the state
+    let hasReset = false;
+
+    // Function to safely reset the crawling state once
+    const resetCrawlingState = () => {
+      if (!hasReset) {
+        hasReset = true;
+        setIsCrawling(false);
+        console.log("🔵 CRAWL UI: Reset crawling button state");
+      }
+    };
+
+    try {
       // Create channel for event communication
       const onEvent = new Channel<CrawlEvent>();
 
-      // Start crawling with the channel
-      await startCrawling({
+      // Set up focused event handler to track crawling progress
+      onEvent.onmessage = (message) => {
+        // Only log important events, not every URL discovered
+        if (message.event === "finished") {
+          console.log("🟢 CRAWL FINISHED:", message.data);
+          resetCrawlingState();
+
+          // Add a delay before showing completion toast to prevent overriding the start toast
+          setTimeout(() => {
+            toast.success("Crawling completed", {
+              description: `Discovered ${message.data.totalUrls} URLs`,
+            });
+          }, 1500);
+        } else if (message.event === "error") {
+          console.error("🔴 CRAWL ERROR:", message.data.message);
+          resetCrawlingState();
+
+          toast.error("Crawling error", {
+            description: message.data.message,
+          });
+        }
+      };
+
+      console.log("🔵 CRAWL API: Sending request to start crawling");
+
+      // Start crawling with the channel using current form values
+      const taskId = await startCrawling({
         technologyId: selectedTechnology.id,
         versionId: selectedVersion.id,
         startUrl: startUrl,
@@ -153,14 +221,33 @@ export function CrawlConfiguration() {
         skipProcessedUrls: skipProcessed,
         onEvent: onEvent,
       });
+
+      console.log(
+        "🟢 CRAWL API: Request completed successfully with taskId:",
+        taskId
+      );
+
+      // Show toast for task start - explicitly set a longer duration
+      toast.success("Crawling successfully started", {
+        description: `Now crawling URLs for ${selectedTechnology.name} ${selectedVersion.version}`,
+        duration: 4000, // Show for 4 seconds
+      });
+
+      // Reset crawling state immediately after successful start
+      resetCrawlingState();
+
+      // For safety, set a timeout to reset the button state after 30 seconds
+      // in case the 'finished' event is never received
+      setTimeout(() => {
+        resetCrawlingState();
+      }, 30000);
     } catch (error) {
-      console.error("Error starting crawl:", error);
+      console.error("🔴 CRAWL ERROR: Failed to start crawling", error);
       toast.error("Crawling failed", {
         description:
           error instanceof Error ? error.message : "Failed to start crawling",
       });
-    } finally {
-      setIsCrawling(false);
+      resetCrawlingState();
     }
   };
 
@@ -175,7 +262,23 @@ export function CrawlConfiguration() {
       depthLevel={2}
       animate
     >
-      <h2 className="text-xl font-semibold mb-4">Crawl Configuration</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold">Crawl Configuration</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefreshSettings}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5"
+        >
+          {isRefreshing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Refresh Settings
+        </Button>
+      </div>
 
       <div className="space-y-6">
         <div className="grid gap-6 sm:grid-cols-2">
@@ -237,32 +340,48 @@ export function CrawlConfiguration() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <Switch
-            checked={skipProcessed}
-            onCheckedChange={setSkipProcessed}
-            id="skip-processed"
-          />
-          <Label htmlFor="skip-processed">Skip previously processed URLs</Label>
+          <div className="flex items-center glass-depth-1 px-2 py-1 rounded-md text-xs">
+            <Switch
+              id="skip-processed"
+              checked={skipProcessed}
+              onCheckedChange={(checked) => {
+                console.log("Toggle skipProcessed to:", checked);
+                setSkipProcessed(checked);
+              }}
+              className={
+                skipProcessed
+                  ? "glass-bioluminescent bg-blue-500/80 border-blue-400"
+                  : "bg-blue-900/50 border-blue-800/50"
+              }
+            />
+            <label
+              htmlFor="skip-processed"
+              className="cursor-pointer flex items-center gap-1 ml-1"
+            >
+              <span>Skip previously processed URLs</span>
+            </label>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="text-xs text-muted-foreground mb-2">
+          Remember to save your settings before starting a crawl operation. The
+          exclusion filters apply to all URLs discovered during crawling.
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-3">
           <Button
             onClick={handleSaveSettings}
             disabled={isLoading}
             variant="outline"
             className="glass-surface"
           >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4 mr-2" />
-            )}
+            <Save className="h-4 w-4 mr-2" />
             Save Settings
           </Button>
 
           <Button
             onClick={handleApplyFilters}
-            disabled={isLoading || isFiltering}
+            disabled={isFiltering || isLoading}
             variant="outline"
             className="glass-surface"
           >
@@ -276,7 +395,7 @@ export function CrawlConfiguration() {
 
           <Button
             onClick={handleStartCrawling}
-            disabled={!startUrl || isLoading || isCrawling}
+            disabled={isCrawling || !startUrl || isLoading}
             className="glass-button glass-current"
           >
             {isCrawling ? (

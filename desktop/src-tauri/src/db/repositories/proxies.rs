@@ -82,28 +82,3 @@ impl_repository!(
     proxies::table,
     proxies::id
 );
-
-// Convenient public functions
-pub async fn get_all_proxies() -> Result<Vec<Proxy>, DbError> {
-    ProxyRepository::new().get_all().await
-}
-
-pub async fn get_proxy(id: uuid::Uuid) -> Result<Option<Proxy>, DbError> {
-    ProxyRepository::new().get_by_id(id).await
-}
-
-pub async fn create_proxy(proxy: Proxy) -> Result<Proxy, DbError> {
-    ProxyRepository::new().create(&proxy).await
-}
-
-pub async fn update_proxy(id: uuid::Uuid, proxy: Proxy) -> Result<Proxy, DbError> {
-    ProxyRepository::new().update(id, &proxy).await
-}
-
-pub async fn delete_proxy(id: uuid::Uuid) -> Result<bool, DbError> {
-    ProxyRepository::new().delete(id).await
-}
-
-pub async fn save_proxies_batch(proxy_urls: &[String]) -> Result<Vec<Proxy>, DbError> {
-    ProxyRepository::new().save_proxies_batch(proxy_urls).await
-}

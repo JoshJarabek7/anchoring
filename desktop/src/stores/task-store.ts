@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { create } from 'zustand';
+import { workerService } from '../lib/worker-service';
 
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -44,7 +45,10 @@ interface TaskState {
   getTask: (taskId: string) => Promise<Task | null>;
   addTask: (task: Task) => void;
   updateTaskProgress: (taskId: string, progress: number, status: TaskStatus, stages?: TaskStage[]) => void;
+  batchUpdateTasks: (tasks: Task[]) => void;
+  batchUpdateProgress: (updates: Array<{ taskId: string, progress: number, status: TaskStatus, stages?: TaskStage[] }>) => void;
   removeTask: (taskId: string) => void;
+  removeCompletedTasks: () => void;
   cancelTask: (taskId: string) => Promise<void>;
 }
 
@@ -104,10 +108,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       set({ isLoading: true, error: null });
       const activeTasks = await invoke<Task[]>('get_active_tasks');
       
-      // Process tasks with proper payload handling
-      const processedTasks = activeTasks.map(processTaskPayload);
-      
-      set({ tasks: processedTasks, isLoading: false });
+      // Process tasks with web worker for better performance
+      workerService.sendMessage('PROCESS_TASKS', { tasks: activeTasks }, (processedTasks) => {
+        // Set state with worker-processed tasks
+        set({ tasks: processedTasks, isLoading: false });
+      }).catch(error => {
+        // Fallback to processing in the main thread if worker fails
+        const processedTasks = activeTasks.map(processTaskPayload);
+        set({ tasks: processedTasks, isLoading: false });
+      });
     } catch (error) {
       set({
         isLoading: false,
@@ -156,24 +165,111 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
   
   updateTaskProgress: (taskId, progress, status, stages) => {
-    set(state => ({
-      tasks: state.tasks.map(task => 
-        task.id === taskId 
-          ? { 
-              ...task, 
-              progress, 
-              status,
-              // Only update stages if explicitly provided
-              ...(stages ? { stages } : {})
-            }
-          : task
-      )
-    }));
+    set(state => {
+      const taskIndex = state.tasks.findIndex(task => task.id === taskId);
+      if (taskIndex === -1) return state;
+
+      const updatedTasks = [...state.tasks];
+      updatedTasks[taskIndex] = {
+        ...updatedTasks[taskIndex],
+        progress,
+        status,
+        ...(stages ? { stages } : {})
+      };
+
+      // If task is completed, failed, or cancelled, schedule it for removal
+      if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+        setTimeout(() => {
+          get().removeTask(taskId);
+        }, status === 'completed' ? 3000 : 5000); // Remove completed tasks faster than failed/cancelled
+      }
+
+      return { tasks: updatedTasks };
+    });
+  },
+  
+  // New method for batch updating tasks using worker
+  batchUpdateTasks: (tasks) => {
+    // Use worker to process tasks efficiently
+    workerService.sendMessage('PROCESS_TASKS', { tasks }, (processedTasks) => {
+      // Update state with all processed tasks at once
+      set(state => {
+        // Create map of existing tasks by ID for quick lookups
+        const currentTaskMap = new Map(state.tasks.map(task => [task.id, task]));
+        
+        // Process updates maintaining any existing tasks not in the update
+        const updatedTasks = [...state.tasks];
+        
+        processedTasks.forEach(processedTask => {
+          const taskIndex = updatedTasks.findIndex(t => t.id === processedTask.id);
+          
+          if (taskIndex >= 0) {
+            // Update existing task
+            updatedTasks[taskIndex] = processedTask;
+          } else {
+            // Add new task
+            updatedTasks.push(processedTask);
+          }
+        });
+        
+        return { tasks: updatedTasks };
+      });
+    });
+  },
+  
+  // Batch update task progress for multiple tasks at once
+  batchUpdateProgress: (updates) => {
+    if (updates.length === 0) return;
+    
+    set(state => {
+      // Create a new tasks array to hold the updated tasks
+      const updatedTasks = [...state.tasks];
+      
+      // Process each update
+      for (const update of updates) {
+        const { taskId, progress, status, stages } = update;
+        
+        // Find the task to update
+        const taskIndex = updatedTasks.findIndex(task => task.id === taskId);
+        
+        // Skip if task not found
+        if (taskIndex === -1) continue;
+        
+        // Update the task at that index
+        updatedTasks[taskIndex] = {
+          ...updatedTasks[taskIndex],
+          progress,
+          status,
+          ...(stages ? { stages } : {})
+        };
+      }
+      
+      return { tasks: updatedTasks };
+    });
   },
   
   removeTask: (taskId) => {
+    set(state => {
+      // Check if task exists before attempting to remove
+      const taskExists = state.tasks.some(t => t.id === taskId);
+      
+      if (!taskExists) {
+        // No changes needed if task doesn't exist
+        return state;
+      }
+      
+      return {
+        tasks: state.tasks.filter(task => task.id !== taskId)
+      };
+    });
+  },
+  
+  // Remove all completed tasks at once
+  removeCompletedTasks: () => {
     set(state => ({
-      tasks: state.tasks.filter(task => task.id !== taskId)
+      tasks: state.tasks.filter(task => 
+        task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled'
+      )
     }));
   },
   

@@ -170,6 +170,7 @@ impl DocumentationUrl {
     Serialize,
     Deserialize,
     Queryable,
+    QueryableByName,
     Selectable,
     Identifiable,
     Insertable,
@@ -180,19 +181,29 @@ impl DocumentationUrl {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentationSnippet {
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub title: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub description: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub content: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub source_url: String,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub technology_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub version_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>>)]
     pub concepts: Option<Vec<Option<String>>>,
+    #[diesel(sql_type = diesel::sql_types::Timestamp)]
     pub created_at: NaiveDateTime,
+    #[diesel(sql_type = diesel::sql_types::Timestamp)]
     pub updated_at: NaiveDateTime,
 }
 
-// DocumentationEmbedding model
+// // DocumentationEmbedding model
 #[derive(Debug, Queryable, Selectable, Clone)]
 #[diesel(table_name = documentation_embeddings)]
 #[diesel(check_for_backend(diesel::pg::Pg))]

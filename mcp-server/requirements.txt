@@ -1,8 +1,0 @@
-mcp[cli]
-chromadb
-pydantic
-tiktoken
-openai
-numpy
-python-dotenv
-semantic-text-splitter

@@ -1,13 +1,11 @@
 pub mod crawling_settings;
 pub mod documentation;
 pub mod documentation_url;
-pub mod language_options;
 pub mod proxies;
 pub mod technologies;
 pub mod versions;
 
 use crate::db::DbError;
-use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -32,23 +30,6 @@ where
 
     /// Delete an item
     async fn delete(&self, id: ID) -> Result<bool, DbError>;
-
-    /// Execute multiple operations in a transaction
-    async fn transaction<F, R>(&self, f: F) -> Result<R, DbError>
-    where
-        F: FnOnce(&mut diesel::pg::PgConnection) -> Result<R, DbError> + Send + 'static,
-        R: Send + 'static;
-}
-
-/// Helper function to get a database connection asynchronously
-pub async fn get_pg_connection_async() -> Result<
-    diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<diesel::pg::PgConnection>>,
-    DbError,
-> {
-    // We use tokio::task::spawn_blocking to avoid blocking the async runtime
-    tokio::task::spawn_blocking(|| crate::db::get_pg_connection())
-        .await
-        .map_err(|e| DbError::Unknown(format!("Task join error: {}", e)))?
 }
 
 /// Config for timeout in database operations
@@ -56,38 +37,13 @@ pub async fn get_pg_connection_async() -> Result<
 pub struct TimeoutConfig {
     /// Timeout for initialization in seconds
     pub init_timeout_secs: u64,
-    /// Timeout for operations in seconds
-    pub operation_timeout_secs: u64,
 }
 
 impl Default for TimeoutConfig {
     fn default() -> Self {
         Self {
             init_timeout_secs: 30,
-            operation_timeout_secs: 10,
         }
-    }
-}
-
-/// Helper struct to manage transactions
-pub struct Transaction<'a> {
-    conn: &'a mut diesel::pg::PgConnection,
-}
-
-impl<'a> Transaction<'a> {
-    pub fn new(conn: &'a mut diesel::pg::PgConnection) -> Self {
-        Self { conn }
-    }
-
-    pub fn connection(&mut self) -> &mut diesel::pg::PgConnection {
-        self.conn
-    }
-
-    pub fn run<F, R>(&mut self, f: F) -> Result<R, DbError>
-    where
-        F: FnOnce(&mut diesel::pg::PgConnection) -> Result<R, DbError>,
-    {
-        self.conn.transaction(|conn| f(conn))
     }
 }
 
@@ -106,19 +62,6 @@ impl Default for PaginationParams {
             per_page: 20,
         }
     }
-}
-
-/// Helper function for transactions
-pub async fn in_transaction<F, R>(f: F) -> Result<R, DbError>
-where
-    F: FnOnce(&mut diesel::pg::PgConnection) -> Result<R, DbError> + Send + 'static,
-    R: Send + 'static,
-{
-    let mut conn = get_pg_connection_async().await?;
-
-    tokio::task::spawn_blocking(move || conn.transaction(|tx_conn| f(tx_conn)))
-        .await
-        .map_err(|e| DbError::Unknown(format!("Transaction task join error: {}", e)))?
 }
 
 /// Macro to create a correctly implemented repository
@@ -219,14 +162,6 @@ macro_rules! impl_repository {
                 .map_err(|e| DbError::Unknown(format!("Task join error: {}", e)))??;
 
                 Ok(count > 0)
-            }
-
-            async fn transaction<F, R>(&self, f: F) -> Result<R, DbError>
-            where
-                F: FnOnce(&mut diesel::pg::PgConnection) -> Result<R, DbError> + Send + 'static,
-                R: Send + 'static,
-            {
-                crate::db::repositories::in_transaction(f).await
             }
         }
     };

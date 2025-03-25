@@ -313,3 +313,14 @@ sketch
 !mcp-server/MCP_README.md
 .chroma/*
 *.code-workspace
+!src/lib/**
+!.env.example
+t2v.md
+**/CLAUDE.md
+**/FrontendInstructions.md
+**/.cursorrules
+**/TODO.md
+**/t2v.md
+**/mcp_llms.txt
+**/.vscode
+**/t2v2.md

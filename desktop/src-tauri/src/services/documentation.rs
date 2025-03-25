@@ -1,9 +1,5 @@
-use crate::db::models::{
-    DocumentationSnippet, Technology, TechnologyVersion, UrlStatus,
-};
-use crate::db::pgvector::{self, SearchResult};
+use crate::db::models::{DocumentationSnippet, Technology, TechnologyVersion, UrlStatus};
 use crate::db::repositories::documentation::DocumentationRepository;
-use crate::db::repositories::Repository;
 use crate::services::get_services;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -43,22 +39,6 @@ impl DocumentationService {
         }
     }
 
-    // /// Get all documentation snippets
-    // pub async fn get_snippets(&self) -> Result<Vec<DocumentationSnippet>, String> {
-    //     self.repository
-    //         .get_all()
-    //         .await
-    //         .map_err(|e| format!("Error fetching snippets: {}", e))
-    // }
-
-    // /// Get a snippet by ID
-    // pub async fn get_snippet(&self, id: Uuid) -> Result<Option<DocumentationSnippet>, String> {
-    //     self.repository
-    //         .get_by_id(id)
-    //         .await
-    //         .map_err(|e| format!("Error fetching snippet: {}", e))
-    // }
-
     /// Create a new snippet with embedding
     pub async fn add_snippet(&self, snippet: DocumentationSnippet) -> Result<Uuid, String> {
         // Get the IntelligenceService
@@ -80,6 +60,28 @@ impl DocumentationService {
             )
             .await;
 
+        // Verify embedding is f32 before storage
+        println!("Verifying embedding before storage:");
+        println!("  - Embedding length: {}", embedding.len());
+        if !embedding.is_empty() {
+            let first_val = embedding[0];
+            let size_of_val = std::mem::size_of_val(&first_val);
+            println!(
+                "  - Type verification: {} bytes (should be 4 for f32)",
+                size_of_val
+            );
+            println!(
+                "  - First few values: {:?}",
+                &embedding[..3.min(embedding.len())]
+            );
+        }
+
+        // Final explicit cast to ensure f32
+        let embedding: Vec<f32> = embedding
+            .into_iter()
+            .map(|v| v as f32) // Explicit cast to f32
+            .collect();
+
         // Store snippet and embedding
         self.repository
             .add_snippet_with_embedding(&snippet, &embedding)
@@ -87,86 +89,134 @@ impl DocumentationService {
             .map_err(|e| format!("Error adding snippet with embedding: {}", e))
     }
 
-    // /// Update an existing snippet with embedding
-    // pub async fn update_snippet(
-    //     &self,
-    //     snippet: DocumentationSnippet,
-    // ) -> Result<DocumentationSnippet, String> {
-    //     // Get the IntelligenceService
-    //     let intelligence = &get_services().intelligence;
+    /// Get all snippets for a specific version
+    pub async fn get_snippets_for_version(
+        &self,
+        version_id: &Uuid,
+    ) -> Result<Vec<DocumentationSnippet>, String> {
+        use crate::db::get_pg_connection;
+        use crate::db::models::DocumentationSnippet;
+        use diesel::prelude::*;
+        use diesel::sql_query;
 
-    //     // Generate embedding for the snippet content
-    //     let text_for_embedding = format!(
-    //         "Title: {}\nDescription: {}\nContent: {}",
-    //         snippet.title, snippet.description, snippet.content
-    //     );
+        println!(
+            "DocumentationService: get_snippets_for_version called with UUID: {}",
+            version_id
+        );
 
-    //     let embedding = intelligence
-    //         .create_embedding(
-    //             None,
-    //             crate::services::intelligence::ModelType::Embedding(
-    //                 crate::services::intelligence::EmbeddingModel::TextEmbedding3Large,
-    //             ),
-    //             text_for_embedding,
-    //         )
-    //         .await;
+        // Create a query to get all snippets for the version
+        let query = "
+            SELECT 
+                s.id, 
+                s.title, 
+                s.description, 
+                s.content, 
+                s.source_url, 
+                s.technology_id, 
+                s.version_id, 
+                s.concepts, 
+                s.created_at, 
+                s.updated_at
+            FROM 
+                documentation_snippets s
+            WHERE 
+                s.version_id = $1
+            ORDER BY 
+                s.title ASC
+        ";
 
-    //     // Update snippet and embedding
-    //     self.repository
-    //         .update_snippet_with_embedding(&snippet, &embedding)
-    //         .await
-    //         .map_err(|e| format!("Error updating snippet with embedding: {}", e))
-    // }
+        let version_uuid = *version_id;
 
-    /// Delete a snippet
-    // pub async fn delete_snippet(&self, id: Uuid) -> Result<bool, String> {
-    //     self.repository
-    //         .delete_snippet_with_embedding(&id)
-    //         .await
-    //         .map_err(|e| format!("Error deleting snippet: {}", e))
-    // }
+        println!("DocumentationService: Executing SQL to fetch snippets");
 
-    // /// Get snippets for a technology
-    // pub async fn get_snippets_for_technology(
-    //     &self,
-    //     technology_id: Uuid,
-    // ) -> Result<Vec<DocumentationSnippet>, String> {
-    //     self.repository
-    //         .get_by_technology(technology_id)
-    //         .await
-    //         .map_err(|e| format!("Error fetching snippets for technology: {}", e))
-    // }
+        // Execute query in a blocking thread
+        tokio::task::spawn_blocking(move || -> Result<Vec<DocumentationSnippet>, String> {
+            let mut conn = match get_pg_connection() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    println!("DocumentationService: Failed to connect to database: {}", e);
+                    return Err(format!("Failed to connect to database: {}", e));
+                }
+            };
 
-    // /// Get snippets for a version
-    // pub async fn get_snippets_for_version(
-    //     &self,
-    //     version_id: Uuid,
-    // ) -> Result<Vec<DocumentationSnippet>, String> {
-    //     self.repository
-    //         .get_by_version(version_id)
-    //         .await
-    //         .map_err(|e| format!("Error fetching snippets for version: {}", e))
-    // }
+            let result = sql_query(query)
+                .bind::<diesel::sql_types::Uuid, _>(version_uuid)
+                .load::<DocumentationSnippet>(&mut conn);
 
-    // /// Get snippet count for a URL
-    // pub async fn get_snippet_count_for_url(&self, url: &str) -> Result<i64, String> {
-    //     self.repository
-    //         .get_snippet_count_for_url(url)
-    //         .await
-    //         .map_err(|e| format!("Error fetching snippet count for URL: {}", e))
-    // }
+            match result {
+                Ok(snippets) => {
+                    println!(
+                        "DocumentationService: Successfully loaded {} snippets from database",
+                        snippets.len()
+                    );
+                    Ok(snippets)
+                }
+                Err(e) => {
+                    println!(
+                        "DocumentationService: Error fetching snippets from database: {}",
+                        e
+                    );
+                    Err(format!("Error fetching snippets: {}", e))
+                }
+            }
+        })
+        .await
+        .map_err(|e| {
+            println!("DocumentationService: Task join error: {}", e);
+            format!("Task join error: {}", e)
+        })?
+    }
 
-    // /// Process a URL into snippets
-    // pub async fn process_url_to_snippets(
-    //     &self,
-    //     url_id: Uuid,
-    //     technology: &Technology,
-    //     version: &TechnologyVersion,
-    // ) -> Result<Vec<Uuid>, String> {
-    //     // Use the progress-aware version with no progress helper
-    //     self.process_url_to_snippets_with_progress(url_id, technology, version, None)
-    //         .await
-    // }
+    /// Get a single snippet by ID
+    pub async fn get_snippet_by_id(
+        &self,
+        snippet_id: &Uuid,
+    ) -> Result<Option<DocumentationSnippet>, String> {
+        use crate::db::get_pg_connection;
+        use crate::db::models::DocumentationSnippet;
+        use diesel::prelude::*;
+        use diesel::sql_query;
+
+        // Create a query to get the specific snippet
+        let query = "
+            SELECT 
+                s.id, 
+                s.title, 
+                s.description, 
+                s.content, 
+                s.source_url, 
+                s.technology_id, 
+                s.version_id, 
+                s.concepts, 
+                s.created_at, 
+                s.updated_at
+            FROM 
+                documentation_snippets s
+            WHERE 
+                s.id = $1
+        ";
+
+        let uuid = *snippet_id;
+
+        // Execute query in a blocking thread
+        let snippets =
+            tokio::task::spawn_blocking(move || -> Result<Vec<DocumentationSnippet>, String> {
+                let mut conn = match get_pg_connection() {
+                    Ok(conn) => conn,
+                    Err(e) => return Err(format!("Failed to connect to database: {}", e)),
+                };
+
+                sql_query(query)
+                    .bind::<diesel::sql_types::Uuid, _>(uuid)
+                    .load::<DocumentationSnippet>(&mut conn)
+                    .map_err(|e| format!("Error fetching snippet: {}", e))
+            })
+            .await
+            .map_err(|e| format!("Task join error: {}", e))??;
+
+        // Return the first result, if any
+        Ok(snippets.into_iter().next())
+    }
 
     /// Process a URL into snippets with progress updates
     /// This version accepts an optional progress helper that will receive progress updates
@@ -319,95 +369,131 @@ impl DocumentationService {
         Ok(snippet_ids)
     }
 
-    // /// Search for documentation using vector similarity
-    // pub async fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResult>, String> {
-    //     // Get the IntelligenceService
-    //     let intelligence = &get_services().intelligence;
+    /// Get all unique concepts from documentation snippets
+    pub async fn get_all_concepts(&self) -> Result<Vec<String>, String> {
+        use crate::db::get_pg_connection;
+        use diesel::prelude::*;
+        use diesel::sql_query;
+        use diesel::sql_types::Text;
 
-    //     // Generate embedding for the search query
-    //     let query_embedding = intelligence
-    //         .create_embedding(
-    //             None,
-    //             crate::services::intelligence::ModelType::Embedding(
-    //                 crate::services::intelligence::EmbeddingModel::TextEmbedding3Large,
-    //             ),
-    //             query.query.clone(),
-    //         )
-    //         .await;
+        println!("DocumentationService: get_all_concepts called");
 
-    //     // Build filter string based on parameters
-    //     let mut filter_parts = Vec::new();
+        // SQL query to extract all unique concepts
+        let query = "
+            SELECT DISTINCT unnest(concepts) as concept
+            FROM documentation_snippets
+            WHERE concepts IS NOT NULL
+            ORDER BY concept
+        ";
 
-    //     if let Some(tech_id) = &query.technology_id {
-    //         filter_parts.push(format!("s.technology_id = '{}'", tech_id));
-    //     }
+        #[derive(QueryableByName, Debug)]
+        struct ConceptResult {
+            #[diesel(sql_type = Text)]
+            concept: String,
+        }
 
-    //     if let Some(version_id) = &query.version_id {
-    //         filter_parts.push(format!("s.version_id = '{}'", version_id));
-    //     }
+        println!("DocumentationService: Executing SQL to fetch concepts");
 
-    //     let filter = if filter_parts.is_empty() {
-    //         None
-    //     } else {
-    //         Some(filter_parts.join(" AND "))
-    //     };
+        // Execute the query
+        let concepts = tokio::task::spawn_blocking(move || -> Result<Vec<String>, String> {
+            let mut conn = match get_pg_connection() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    println!(
+                        "DocumentationService: Failed to connect to database for concepts: {}",
+                        e
+                    );
+                    return Err(format!("Failed to connect to database: {}", e));
+                }
+            };
 
-    //     // Use limit or default to 10
-    //     let limit = query.limit.unwrap_or(10);
+            let results: Vec<ConceptResult> = match sql_query(query).load(&mut conn) {
+                Ok(r) => r,
+                Err(e) => {
+                    println!("DocumentationService: Error querying concepts: {}", e);
+                    return Err(format!("Error querying concepts: {}", e));
+                }
+            };
 
-    //     // Perform vector search
-    //     pgvector::vector_search_snippets(&query_embedding, limit, filter.as_deref(), None)
-    //         .await
-    //         .map_err(|e| format!("Error searching snippets: {}", e))
-    // }
+            let concept_strings = results
+                .into_iter()
+                .map(|r| r.concept)
+                .collect::<Vec<String>>();
+            println!(
+                "DocumentationService: Found {} unique concepts",
+                concept_strings.len()
+            );
+            Ok(concept_strings)
+        })
+        .await
+        .map_err(|e| {
+            println!(
+                "DocumentationService: Task join error in concepts fetch: {}",
+                e
+            );
+            format!("Task join error: {}", e)
+        })??;
 
-    // /// Clean markdown for a URL
-    // pub async fn clean_markdown(&self, url_id: Uuid) -> Result<String, String> {
-    //     // Get the URL to process
-    //     let url = match get_services()
-    //         .documentation_urls
-    //         .get_url_by_id(url_id)
-    //         .await
-    //     {
-    //         Ok(Some(url)) => url,
-    //         Ok(None) => return Err(format!("URL with ID {} not found", url_id)),
-    //         Err(e) => return Err(format!("Error fetching URL: {}", e)),
-    //     };
+        Ok(concepts)
+    }
 
-    //     // Check if URL has HTML or markdown content
-    //     if url.html.is_none() && url.markdown.is_none() {
-    //         return Err(format!("URL {} has no content to clean", url_id));
-    //     }
+    /// Search snippets using vector search with pagination
+    pub async fn search_snippets_by_vector(
+        &self,
+        query: &str,
+        pagination: Option<crate::db::repositories::PaginationParams>,
+        filter: Option<&str>,
+        version_id: Option<&uuid::Uuid>,
+    ) -> Result<crate::db::pgvector::PaginatedSearchResults, String> {
+        use crate::db::pgvector;
+        use crate::services::get_services;
+        use crate::services::intelligence::{EmbeddingModel, ModelType};
 
-    //     // Get markdown content (convert from HTML if needed)
-    //     let markdown = if let Some(markdown) = url.markdown {
-    //         markdown
-    //     } else if let Some(html) = url.html {
-    //         // Convert HTML to markdown
-    //         get_services().crawler.convert_html_to_markdown(&html)?
-    //     } else {
-    //         return Err("No content available to process".to_string());
-    //     };
+        println!("DocumentationService: search_snippets_by_vector called with query: '{}', pagination: {:?}, filter: {:?}, version_id: {:?}", 
+            query, pagination, filter, version_id);
 
-    //     // Clean the markdown
-    //     let cleaned_markdown = get_services()
-    //         .intelligence
-    //         .cleanup_markdown(&markdown)
-    //         .await?;
+        // Quick check for empty query
+        if query.trim().is_empty() {
+            println!("DocumentationService: Empty query, returning empty results");
+            return Ok(pgvector::PaginatedSearchResults {
+                results: Vec::new(),
+                total_count: 0,
+                page: pagination.as_ref().map(|p| p.page).unwrap_or(1),
+                per_page: pagination.as_ref().map(|p| p.per_page).unwrap_or(10),
+                total_pages: 0,
+            });
+        }
 
-    //     // Update the URL with cleaned markdown
-    //     let _ = get_services()
-    //         .documentation_urls
-    //         .update_url_markdown(
-    //             url_id,
-    //             Some(markdown.clone()),
-    //             Some(cleaned_markdown.clone()),
-    //             UrlStatus::MarkdownReady,
-    //         )
-    //         .await?;
+        // Generate an embedding for the search query
+        println!("DocumentationService: Generating embedding for query");
+        let intelligence_service = &get_services().intelligence;
+        let embedding = intelligence_service
+            .create_embedding(
+                None,
+                ModelType::Embedding(EmbeddingModel::TextEmbedding3Large),
+                query.to_string(),
+            )
+            .await;
 
-    //     // Return task ID for tracking
-    //     let task_id = Uuid::new_v4().to_string();
-    //     Ok(task_id)
-    // }
+        println!(
+            "DocumentationService: Generated embedding with {} dimensions",
+            embedding.len()
+        );
+
+        // Perform the vector search using pgvector
+        println!("DocumentationService: Performing vector search");
+        let result =
+            pgvector::vector_search_snippets_paginated(&embedding, pagination, filter, version_id)
+                .await;
+
+        match &result {
+            Ok(results) => println!(
+                "DocumentationService: Vector search successful, found {} results",
+                results.results.len()
+            ),
+            Err(err) => println!("DocumentationService: Vector search failed: {}", err),
+        }
+
+        result.map_err(|e| format!("Error in vector search: {}", e))
+    }
 }

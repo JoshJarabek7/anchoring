@@ -57,15 +57,52 @@ pub async fn add_embedding(snippet_id: &uuid::Uuid, embedding: &[f32]) -> Result
         return Err(DbError::PgVectorError("Empty embedding vector".to_string()));
     }
 
+    println!("Storing embedding for snippet {}", snippet_id);
+    println!("  - Embedding length: {}", embedding.len());
+    if !embedding.is_empty() {
+        println!(
+            "  - First 3 values: {:?}",
+            &embedding.iter().take(3).collect::<Vec<_>>()
+        );
+    }
+
     // Use tokio to avoid blocking the async runtime
     let snippet_id = *snippet_id;
-    let embedding = embedding.to_vec();
+
+    // Create a copy with explicit f32 casting to ensure type consistency
+    let embedding: Vec<f32> = embedding
+        .iter()
+        .map(|&x| x as f32) // Force explicit cast to f32, even if already f32
+        .collect();
 
     tokio::task::spawn_blocking(move || {
         let mut conn = get_pg_connection()?;
 
-        // Convert embedding to pgvector format
-        let vector = Vector::from(embedding);
+        // Log type verification before Vector creation
+        if !embedding.is_empty() {
+            let first_val = embedding[0];
+            let size_of_val = std::mem::size_of_val(&first_val);
+            let type_name = std::any::type_name::<f32>();
+            println!("Type verification before storing Vector:");
+            println!("  - Type name: {}", type_name);
+            println!("  - Size of value: {} bytes", size_of_val);
+            println!("  - First value: {}", first_val);
+            println!("  - Is 4 bytes (f32): {}", size_of_val == 4);
+            println!("  - Memory representation: {:?}", first_val.to_le_bytes());
+        }
+
+        // Create Vector element by element to ensure f32 type
+        let vector_values: Vec<f32> = embedding
+            .iter()
+            .map(|&x| {
+                // Force f32 conversion more explicitly
+                let val_f32: f32 = x;
+                val_f32
+            })
+            .collect();
+        // Now create Vector from the explicitly typed Vec<f32>
+        let vector = Vector::from(vector_values);
+        println!("Successfully created Vector object for storage");
 
         // Run within a transaction
         conn.transaction(|conn| {
@@ -77,7 +114,7 @@ pub async fn add_embedding(snippet_id: &uuid::Uuid, embedding: &[f32]) -> Result
                     DbError::PgVectorError(format!("Failed to delete existing embedding: {}", e))
                 })?;
 
-            // Then insert new embedding
+            // Then insert new embedding with explicit float4 type
             diesel::sql_query(
                 "INSERT INTO documentation_embeddings (id, snippet_id, embedding, created_at) 
                  VALUES ($1, $2, $3, NOW())",
@@ -102,12 +139,32 @@ pub async fn vector_search_snippets_paginated(
     filter: Option<&str>,
     version_id: Option<&uuid::Uuid>,
 ) -> Result<PaginatedSearchResults, DbError> {
+    // Log more detailed information about the input
+    println!("Starting vector_search_snippets_paginated with:");
+    println!("  - Embedding length: {}", query_embedding.len());
+    println!(
+        "  - First 3 values: {:?}",
+        &query_embedding.iter().take(3).collect::<Vec<_>>()
+    );
+    println!("  - Version ID: {:?}", version_id);
+
     // Validate the embedding dimensions
     if query_embedding.is_empty() {
         return Err(DbError::PgVectorError("Empty query vector".to_string()));
     }
 
-    let query_embedding = query_embedding.to_vec();
+    // Create a copy of the embedding explicitly as f32
+    let query_embedding: Vec<f32> = query_embedding
+        .iter()
+        .map(|&x| x as f32) // Force explicit cast to f32, even if already f32
+        .collect();
+
+    println!(
+        "Vector search with embedding size: {}, first value: {}",
+        query_embedding.len(),
+        query_embedding.first().unwrap_or(&0.0)
+    );
+
     let filter_str = filter.map(String::from);
     let version_id_copy = version_id.cloned();
     let pagination = pagination.unwrap_or_default();
@@ -115,11 +172,39 @@ pub async fn vector_search_snippets_paginated(
     tokio::task::spawn_blocking(move || {
         let mut conn = get_pg_connection()?;
 
-        // Convert query embedding to pgvector format
-        let query_vector = Vector::from(query_embedding);
+        // Create pgvector Vector directly from the f32 values
+        println!("Creating Vector from {} f32 values", query_embedding.len());
+
+        // Log some debug info to verify type
+        if !query_embedding.is_empty() {
+            let first_val = query_embedding[0];
+            // Verify it's f32 by checking the size
+            let size_of_val = std::mem::size_of_val(&first_val);
+            let type_name = std::any::type_name::<f32>();
+            println!("Type verification before Vector creation:");
+            println!("  - Type name: {}", type_name);
+            println!("  - Size of value: {} bytes", size_of_val);
+            println!("  - First value: {}", first_val);
+            println!("  - Is 4 bytes (f32): {}", size_of_val == 4);
+            println!("  - Memory representation: {:?}", first_val.to_le_bytes());
+        }
+
+        // Create Vector element by element to ensure f32 type
+        let vector_values: Vec<f32> = query_embedding
+            .iter()
+            .map(|&x| {
+                // Force f32 conversion more explicitly
+                let val_f32: f32 = x;
+                val_f32
+            })
+            .collect();
+        // Now create Vector from the explicitly typed Vec<f32>
+        let query_vector = Vector::from(vector_values);
+        println!("Successfully created Vector object");
 
         // First, get the total count for pagination
         let count_sql = build_count_query(&filter_str, &version_id_copy)?;
+        println!("Count SQL: {}", count_sql);
 
         let count_result = diesel::sql_query(&count_sql)
             .load::<CountResult>(&mut conn)
@@ -130,18 +215,39 @@ pub async fn vector_search_snippets_paginated(
         } else {
             0
         };
+        println!("Total count: {}", total_count);
 
         // Then get the results for the current page
-        let query_sql = build_search_query(&filter_str, &version_id_copy, &pagination)?;
+        let query_sql = build_search_query(&filter_str, &version_id_copy)?;
+        println!("Search SQL: {}", query_sql);
 
-        let results = diesel::sql_query(&query_sql)
+        println!("Executing vector search query...");
+
+        // The SQL query now has explicit type casting in build_search_query,
+        // so no replacements needed
+        let modified_query_sql = query_sql;
+
+        // Calculate pagination offset
+        let offset = (pagination.page - 1) * pagination.per_page;
+        println!(
+            "Pagination: page={}, per_page={}, offset={}",
+            pagination.page, pagination.per_page, offset
+        );
+
+        // Explicitly separate and type each binding to avoid potential order issues
+        let results = diesel::sql_query(&modified_query_sql)
+            // First param is the vector
             .bind::<pgvector::sql_types::Vector, _>(query_vector)
-            .bind::<diesel::sql_types::BigInt, _>(
-                ((pagination.page - 1) * pagination.per_page) as i64,
-            )
+            // Second param is the offset (zero-based)
+            .bind::<diesel::sql_types::BigInt, _>(offset)
+            // Third param is the limit
             .bind::<diesel::sql_types::BigInt, _>(pagination.per_page)
             .load::<SearchResult>(&mut conn)
-            .map_err(|e| DbError::PgVectorError(format!("Failed to search embeddings: {}", e)))?;
+            .map_err(|e| {
+                println!("Search error: {}", e);
+                DbError::PgVectorError(format!("Failed to search embeddings: {}", e))
+            })?;
+        println!("Search returned {} results", results.len());
 
         // Calculate total pages
         let total_pages = (total_count as f64 / pagination.per_page as f64).ceil() as i64;
@@ -158,52 +264,34 @@ pub async fn vector_search_snippets_paginated(
     .map_err(|e| DbError::Unknown(format!("Task join error: {}", e)))?
 }
 
-/// Legacy function for backward compatibility
-pub async fn vector_search_snippets(
-    query_embedding: &[f32],
-    limit: usize,
-    filter: Option<&str>,
-    version_id: Option<&uuid::Uuid>,
-) -> Result<Vec<SearchResult>, DbError> {
-    let pagination = PaginationParams {
-        page: 1,
-        per_page: limit as i64,
-    };
-
-    let results =
-        vector_search_snippets_paginated(query_embedding, Some(pagination), filter, version_id)
-            .await?;
-
-    Ok(results.results)
-}
-
 /// Delete an embedding
-pub async fn delete_embedding(id: &uuid::Uuid) -> Result<bool, DbError> {
-    let id = *id;
-
-    tokio::task::spawn_blocking(move || -> Result<bool, DbError> {
-        let mut conn = get_pg_connection()?;
-
-        // Use explicit conversion to handle error typing
-        let result = diesel::delete(documentation_embeddings::table)
-            .filter(documentation_embeddings::snippet_id.eq(id))
-            .execute(&mut conn);
-
-        let rows_affected = match result {
-            Ok(rows) => rows,
-            Err(e) => {
-                return Err(DbError::PgVectorError(format!(
-                    "Failed to delete embedding: {}",
-                    e
-                )))
-            }
-        };
-
-        Ok(rows_affected > 0)
-    })
-    .await
-    .map_err(|e| DbError::Unknown(format!("Task join error: {}", e)))?
-}
+// This function is not used currently and can be removed to avoid warnings
+// pub async fn delete_embedding(id: &uuid::Uuid) -> Result<bool, DbError> {
+//    let id = *id;
+//
+//    tokio::task::spawn_blocking(move || -> Result<bool, DbError> {
+//        let mut conn = get_pg_connection()?;
+//
+//        // Use explicit conversion to handle error typing
+//        let result = diesel::delete(documentation_embeddings::table)
+//            .filter(documentation_embeddings::snippet_id.eq(id))
+//            .execute(&mut conn);
+//
+//        let rows_affected = match result {
+//            Ok(rows) => rows,
+//            Err(e) => {
+//                return Err(DbError::PgVectorError(format!(
+//                    "Failed to delete embedding: {}",
+//                    e
+//                )))
+//            }
+//        };
+//
+//        Ok(rows_affected > 0)
+//    })
+//    .await
+//    .map_err(|e| DbError::Unknown(format!("Task join error: {}", e)))?
+// }
 
 // Helper function to build the count query
 fn build_count_query(
@@ -239,12 +327,11 @@ struct CountResult {
 fn build_search_query(
     filter: &Option<String>,
     version_id: &Option<Uuid>,
-    pagination: &PaginationParams,
 ) -> Result<String, DbError> {
     let mut query_sql = String::from(
         "SELECT 
             s.id::text as id, 
-            e.embedding <-> $1 as similarity, 
+            (e.embedding::vector(2000) <-> $1::vector(2000))::float4 as similarity, 
             s.content as content,
             json_build_object(
                 'title', s.title, 
