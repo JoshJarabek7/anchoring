@@ -58,6 +58,6 @@
     "purgecss": "^7.0.2",
     "ts-node": "^10.9.2",
     "typescript-eslint": "^8.27.0",
-    "vite": "^6.2.2"
+    "vite": "^6.2.5"
   }
 }
