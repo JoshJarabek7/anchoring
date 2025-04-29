@@ -9,8 +9,6 @@ Before using Anchoring, you must install these prerequisites and set up configur
 ### Required Prerequisites
 
 - [Node.js](https://nodejs.org/) - For the frontend
-- [Python](https://python.org/) 3.10 through 3.12 - For the MCP server
-- [uv](https://github.com/astral-sh/uv) - Fast Python package installer and resolver (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - [Rust](https://www.rust-lang.org/tools/install) - Required for Tauri and some dependencies
 - [Docker](https://www.docker.com) - For running the PostgreSQL/pgvector container
 - [OpenAI API key](https://platform.openai.com/api-keys) - For generating embeddings
@@ -47,18 +45,7 @@ Before using Anchoring, you must install these prerequisites and set up configur
 
 These configuration steps are necessary regardless of which installation method you choose:
 
-1. **Set up MCP Server environment** (Assuming MCP Server is in a separate location):
-   ```bash
-   # Navigate to the MCP server directory
-   cd /path/to/mcp-server 
-
-   # Create and configure environment variables
-   cp .env.EXAMPLE .env
-   # Edit .env and add your OPENAI_API_KEY and other required values.
-   # Ensure database connection details (if any needed by MCP server) are correct.
-   ```
-
-2. **Set up PostgreSQL Docker configuration**:
+1. **Set up PostgreSQL Docker configuration**:
    ```bash
    # In the main Anchoring project directory (where docker-compose.yml resides)
    # The docker-compose.yml file is already configured for PostgreSQL/pgvector.
@@ -76,25 +63,14 @@ These configuration steps are necessary regardless of which installation method 
    #       device: '/path/to/store/postgres/data' # Update this path
    ```
 
-3. **Configure MCP in Your Development Environment**:
-
-   The MCP server needs to be configured in applications like Cursor to access the MCP capabilities:
-
-   ```
-   # For Cursor and other MCP clients, add this command to your MCP settings
-   # NOTE: The exact '--with' flags depend on the mcp-server's pyproject.toml
-   uv run --python >=3.10,<3.13 --with mcp[cli] --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp run /path/to/mcp-server/app/server.py
-   ```
-
-   Note: Remove any quotes in the command when adding to Cursor MCP settings, or it will fail.
-
-4. **Set up Desktop App environment**:
+2. **Set up Desktop App environment**:
    ```bash
    # Navigate to the desktop directory (root of this project)
    cd /path/to/anchoring
    cp .env.EXAMPLE .env
 
    # Edit .env and set the ANCHORING_POSTGRES_URI variable
+   # This tells the Anchoring application how to connect to the PostgreSQL database.
    # Example: ANCHORING_POSTGRES_URI=postgres://anchoring:anchoring@localhost:5432/anchoring
    ```
 
@@ -131,14 +107,7 @@ docker-compose up -d
 docker ps
 ```
 
-#### 2. Install the MCP Server with Claude Desktop (If MCP server is separate)
-
-```bash
-# NOTE: The exact '--with' flags depend on the mcp-server's pyproject.toml
-uv run --python ">=3.10,<3.13" --with "mcp[cli]" --with numpy --with openai --with pydantic --with semantic-text-splitter --with tiktoken mcp install "/path/to/mcp-server/app/server.py"
-```
-
-#### 3. Set Up the Desktop Application
+#### 2. Set Up the Desktop Application
 
 ```bash
 # Navigate to the desktop directory (root of this project)
@@ -171,10 +140,21 @@ npm run tauri dev
 
 ## MCP Server Capabilities
 
-The MCP server provides two main tools for Claude and other compatible LLMs:
+The Anchoring application includes a built-in MCP (Model Context Protocol) server that runs as part of the main application backend. It allows compatible clients (like Cursor or Claude) to interact with the documentation data.
 
-1. `list-documentation-components` - Lists available documentation components for a category (language, framework, or library)
-2. `query-documentation-snippets` - Searches for documentation snippets based on natural language queries
+The server provides two main tools:
+
+1. `list_technologies` - Lists available technologies and their versions stored in the database.
+2. `vector_search` - Searches for relevant documentation snippets based on a natural language query and optional filters (like technology name/version).
+
+### Connecting MCP Clients
+
+To connect an MCP client (like Cursor) to the Anchoring MCP server:
+
+1.  Ensure the Anchoring application is running.
+2.  Ensure the PostgreSQL Docker container is running (`docker ps`).
+3.  In your MCP client's settings, add the Anchoring server endpoint. By default, it runs on:
+    `http://localhost:8327`
 
 ## Using the Application
 
@@ -184,10 +164,14 @@ Once the application is running, you can:
 2. Search for documentation snippets using natural language queries
 3. Save and organize knowledge bases
 
-## Using the MCP without running the Application
+## Using the MCP without running the Application GUI
 
-Once you've crawled and processed your URLs and snippets within the desktop application, you no longer need to have the application running.
-However, the PostgreSQL docker container (defined in docker-compose.yml) needs to be up-and-running in order for Cursor or Claude to query documentation snippets via the MCP server.
+Once you've crawled and processed your URLs and snippets, you don't need the *graphical user interface* of Anchoring running to use the MCP server capabilities.
+
+However, the following must be running:
+
+1.  The **PostgreSQL Docker container** (started with `docker-compose up -d`).
+2.  The **Anchoring application's backend process**. You can start *just* the backend if needed, although simply running the full application (`npm run tauri dev` or the installed binary) is usually the easiest way to ensure the backend and its built-in MCP server are active.
 
 ## Troubleshooting
 
@@ -219,14 +203,17 @@ If you encounter Python version compatibility issues:
 3. Consider using a tool like pyenv to install a compatible Python version
 4. uv should automatically search for installed versions within the accepted range, and if not, install them for you.
 
-### MCP Not Found in Claude
+### MCP Not Found in Claude / Cursor
 
-If Claude can't see your MCP:
+If your MCP client (like Cursor or Claude Desktop) cannot connect to the Anchoring MCP server:
 
-1. Make sure the docker-compose container is running.
-2. Verify it was properly registered with `mcp install` command from above.
-3. Check the MCP list in Claude Desktop's developer settings
-4. Quit the Claude Desktop app and reopen. There's no refresh or reload button for MCP servers in the app and restarting it is required.
+1.  **Ensure Anchoring is Running:** The main Anchoring application (or at least its backend process) must be running for the built-in MCP server to be active.
+2.  **Ensure PostgreSQL is Running:** The MCP server needs to talk to the database. Run `docker ps` and make sure the `anchoring-pgvector` container is listed and running.
+3.  **Check the Endpoint:** Verify the endpoint configured in your MCP client exactly matches the one the server is listening on (default: `http://localhost:8327`). Check the Anchoring application's startup logs for messages like `[MCP] Server will listen on URI: http://localhost:8327`.
+4.  **Check for Port Conflicts:** Ensure no other application is using port 8327 on your machine.
+5.  **Check Firewall:** Make sure your system firewall isn't blocking connections to port 8327 from localhost.
+6.  **Restart Anchoring:** Try quitting and restarting the Anchoring application.
+7.  **Restart MCP Client:** Try quitting and restarting Cursor/Claude.
 
 ### Tauri Development Issues
 
@@ -265,12 +252,6 @@ The application uses environment variables for configuration:
 - `ANCHORING_POSTGRES_URI`: Full connection URI for the PostgreSQL database. Example: `postgres://user:password@host:port/dbname`
 
 **How it works:** The application's backend (written in Rust) reads the `ANCHORING_POSTGRES_URI` environment variable at startup. This variable tells the application the address (host and port), credentials (user and password), and database name needed to connect to the PostgreSQL server running in the Docker container defined by `docker-compose.yml`.
-
-#### MCP Server Environment Variables (Assumed - verify with MCP server's .env.EXAMPLE)
-
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `MCP_SERVER_NAME`: Name for the MCP server
-- Potentially database connection variables if the MCP server connects directly.
 
 ### Additional Troubleshooting
 
