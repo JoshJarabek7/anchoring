@@ -16,8 +16,8 @@
   {
     "label": "main",
     "title": "Anchoring",
-    "width": 2560,
-    "height": 1440,
+    "width": 1600,
+    "height": 900,
     "resizable": true,
     "fullscreen": false,
     "devtools": true,

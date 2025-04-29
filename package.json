@@ -11,7 +11,8 @@
     "analyze": "vite build --mode=analyze",
     "purge": "node --loader ts-node/esm purgecss.config.js",
     "build:prod": "npm run purge && tsc && vite build && npm run copy-optimized-css",
-    "copy-optimized-css": "cp -r optimized-css/* dist/assets/"
+    "copy-optimized-css": "cp -r optimized-css/* dist/assets/",
+    "lint": "eslint --fix \"src/**/*.{ts,tsx,js,jsx}\""
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.3",
