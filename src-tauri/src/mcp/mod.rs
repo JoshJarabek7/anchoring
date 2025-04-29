@@ -144,6 +144,7 @@ fn list_technologies_tool() -> Tool {
             "properties": {},
             "required": []
         }),
+        annotations: None,
     }
 }
 
@@ -190,6 +191,7 @@ fn vector_search_tool() -> Tool {
             },
             "required": ["query", "technology_name"]
         }),
+        annotations: None,
     }
 }
 

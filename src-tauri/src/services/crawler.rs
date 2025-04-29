@@ -1347,7 +1347,7 @@ impl CrawlerService {
     /// Check and unmark URLs that are in pending state
     pub async fn check_and_unmark_pending_urls(
         &self,
-        technology_id: Uuid,
+        _technology_id: Uuid,
         version_id: Uuid,
     ) -> Result<usize, String> {
         // Get all URLs for this version

@@ -49,7 +49,6 @@ pub fn run() {
 
     // Create task count for tracking
     let task_count = Arc::new(Mutex::new(0));
-    let task_count_clone = task_count.clone();
 
     let mut builder = tauri::Builder::default();
 
@@ -75,7 +74,7 @@ pub fn run() {
     // Build and run the application
     builder
         .setup(move |app| {
-            let app_handle = app.handle();
+            // let app_handle = app.handle(); // Removed unused handle
 
             // Create the system tray menu
             let tray_menu = MenuBuilder::new(app)

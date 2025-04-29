@@ -181,10 +181,9 @@ If the application or MCP server can't connect to PostgreSQL:
 
 1. Verify the PostgreSQL container is running: `docker ps` (look for `anchoring-pgvector`)
 2. Check that the `ANCHORING_POSTGRES_URI` in the main project's `.env` file is correct (e.g., `postgres://anchoring:anchoring@localhost:5432/anchoring`).
-3. Check any database connection settings in the MCP server's `.env` file (if applicable).
-4. Ensure the hostname and port in the connection string match the `docker-compose.yml` service and exposed port.
-5. Try restarting the PostgreSQL container: `docker-compose restart postgres` (run from the directory containing `docker-compose.yml`)
-6. Check Docker container logs: `docker logs anchoring-pgvector`
+3. Ensure the hostname and port in the connection string match the `docker-compose.yml` service and exposed port.
+4. Try restarting the PostgreSQL container: `docker-compose restart postgres` (run from the directory containing `docker-compose.yml`)
+5. Check Docker container logs: `docker logs anchoring-pgvector`
 
 ### Embedding Generation Errors
 
@@ -193,15 +192,6 @@ If you see errors related to OpenAI embeddings:
 1. Verify your OPENAI_API_KEY in .env is valid and has sufficient credits
 2. Check internet access to connect to OpenAI's API
 3. Look for any rate limit messages in the error logs
-
-### Python Version Issues
-
-If you encounter Python version compatibility issues:
-
-1. Check your Python version: `python --version`
-2. Ensure it matches the range required (3.10-3.12) - Python 3.13 is not supported
-3. Consider using a tool like pyenv to install a compatible Python version
-4. uv should automatically search for installed versions within the accepted range, and if not, install them for you.
 
 ### MCP Not Found in Claude / Cursor
 
@@ -333,23 +323,16 @@ If you're experiencing problems running the application on Linux:
    # Log out and back in for changes to take effect
    ```
 
-4. **Permission Issues**: If the app can't access files, check permissions:
-   ```bash
-   # Fix permissions for the ChromaDB directory
-   chmod -R 755 ~/.local/share/com.gawntlet.anchoring
-   ```
-
-5. **Library Loading Issues**: If you see errors about missing libraries, try installing them:
+4. **Library Loading Issues**: If you see errors about missing libraries, try running:
    ```bash
    sudo ldconfig
    ```
 
-6. **File Access Permissions**: Check the `capabilities/default.json` file in `desktop/src-tauri/capabilities/` to ensure it's using platform-independent variables like `$HOME`, `$DATA`, and `$RESOURCE` instead of hardcoded macOS paths. If you see paths like `/Users/...`, update them to use the appropriate Tauri variables.
+5. **File Access Permissions**: Check the `capabilities/default.json` file in `src-tauri/capabilities/` to ensure it's using platform-independent variables like `$HOME`, `$DATA`, and `$RESOURCE` instead of hardcoded macOS paths. If you see paths like `/Users/...`, update them to use the appropriate Tauri variables.
 
 ### General Platform Issues
 
-1. **Python Version**: Ensure you're using Python 3.10-3.12 (Python 3.13 is not supported)
-2. **Node.js Version**: Use a current LTS version of Node.js
-3. **Path Issues**: Verify all paths in `.env` files are compatible with your OS
-4. **Docker Container**: If PostgreSQL container won't start, check for port conflicts (default 5432) or volume permission issues. Check logs: `docker logs anchoring-pgvector`
-5. **API Keys**: Ensure your OpenAI API key is valid and has sufficient credits
+1. **Node.js Version**: Use a current LTS version of Node.js
+2. **Path Issues**: Verify all paths in `.env` files are compatible with your OS
+3. **Docker Container**: If PostgreSQL container won't start, check for port conflicts (default 5432) or volume permission issues. Check logs: `docker logs anchoring-pgvector`
+4. **API Keys**: Ensure your OpenAI API key is valid and has sufficient credits
